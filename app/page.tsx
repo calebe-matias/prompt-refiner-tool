@@ -81,54 +81,69 @@ export default function Home() {
   const [resp2, setResp2]   = useState('');
   const [loading, setLoading] = useState(false);
 
-  // — A-placeholders
-  const [placeholdersA, setPlaceholdersA] = useState<string[]>([]);
+  // — First-Call placeholders
+  const [placeholdersSysA, setPlaceholdersSysA] = useState<string[]>([]);
+  const [placeholdersUserA, setPlaceholdersUserA] = useState<string[]>([]);
   const [valuesA, setValuesA] = useState<Record<string,string>>({});
 
   useEffect(() => {
     const rx = /\$\{([^}]+)\}/g;
     const found = new Set<string>();
-    for (const txt of [sysA, userA]) {
-      let m;
-      while ((m = rx.exec(txt))) found.add(m[1]);
-    }
-    setPlaceholdersA(Array.from(found));
-  }, [sysA, userA]);
+    let m;
+    while ((m = rx.exec(sysA))) found.add(m[1]);
+    setPlaceholdersSysA(Array.from(found));
+  }, [sysA]);
 
+  useEffect(() => {
+    const rx = /\$\{([^}]+)\}/g;
+    const found = new Set<string>();
+    let m;
+    while ((m = rx.exec(userA))) found.add(m[1]);
+    setPlaceholdersUserA(Array.from(found));
+  }, [userA]);
+
+  // initialize A-values whenever placeholders change
   useEffect(() => {
     setValuesA(prev => {
       const nxt: Record<string,string> = {};
-      placeholdersA.forEach(ph => {
+      [...placeholdersSysA, ...placeholdersUserA].forEach(ph => {
         nxt[ph] = prev[ph] ?? '';
       });
       return nxt;
     });
-  }, [placeholdersA]);
+  }, [placeholdersSysA, placeholdersUserA]);
 
-  // — B-placeholders (including FIRST_RESPONSE)
-  const [placeholdersB, setPlaceholdersB] = useState<string[]>([]);
+  // — Second-Call placeholders (incl. FIRST_RESPONSE)
+  const [placeholdersSysB, setPlaceholdersSysB] = useState<string[]>([]);
+  const [placeholdersUserB, setPlaceholdersUserB] = useState<string[]>([]);
   const [valuesB, setValuesB] = useState<Record<string,string>>({});
 
   useEffect(() => {
     const rx = /\$\{([^}]+)\}/g;
     const found = new Set<string>();
-    for (const txt of [sysB, userB]) {
-      let m;
-      while ((m = rx.exec(txt))) found.add(m[1]);
-    }
-    setPlaceholdersB(Array.from(found));
-  }, [sysB, userB]);
+    let m;
+    while ((m = rx.exec(sysB))) found.add(m[1]);
+    setPlaceholdersSysB(Array.from(found));
+  }, [sysB]);
+
+  useEffect(() => {
+    const rx = /\$\{([^}]+)\}/g;
+    const found = new Set<string>();
+    let m;
+    while ((m = rx.exec(userB))) found.add(m[1]);
+    setPlaceholdersUserB(Array.from(found));
+  }, [userB]);
 
   useEffect(() => {
     setValuesB(prev => {
       const nxt: Record<string,string> = {};
-      placeholdersB.forEach(ph => {
-        // auto-fill FIRST_RESPONSE when it appears
+      [...placeholdersSysB, ...placeholdersUserB].forEach(ph => {
+        // auto-fill FIRST_RESPONSE
         nxt[ph] = ph === 'FIRST_RESPONSE' ? resp1 : prev[ph] ?? '';
       });
       return nxt;
     });
-  }, [placeholdersB, resp1]);
+  }, [placeholdersSysB, placeholdersUserB, resp1]);
 
   // — Run both calls
   async function runChain() {
@@ -144,21 +159,23 @@ export default function Home() {
       let pSysA  = sysA;
       let pUserA = userA;
       Object.entries(valuesA).forEach(([k,v]) => {
-        pSysA  = pSysA.replace(new RegExp(`\\$\\{${k}\\}`, 'g'), v);
-        pUserA = pUserA.replace(new RegExp(`\\$\\{${k}\\}`, 'g'), v);
+        const pat = new RegExp(`\\$\\{${k}\\}`, 'g');
+        pSysA  = pSysA.replace(pat, v);
+        pUserA = pUserA.replace(pat, v);
       });
 
-      // 2️⃣ Replace B-placeholders except FIRST_RESPONSE
+      // 2️⃣ Replace B-placeholders (except FIRST_RESPONSE)
       let pSysB  = sysB;
       let pUserB = userB;
       Object.entries(valuesB).forEach(([k,v]) => {
         if (k !== 'FIRST_RESPONSE') {
-          pSysB  = pSysB.replace(new RegExp(`\\$\\{${k}\\}`, 'g'), v);
-          pUserB = pUserB.replace(new RegExp(`\\$\\{${k}\\}`, 'g'), v);
+          const pat = new RegExp(`\\$\\{${k}\\}`, 'g');
+          pSysB  = pSysB.replace(pat, v);
+          pUserB = pUserB.replace(pat, v);
         }
       });
 
-      // 3️⃣ Call your serverless endpoint
+      // 3️⃣ Serverless chain
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -176,7 +193,7 @@ export default function Home() {
       setResp1(data.first);
       setResp2(data.second);
       message.success(
-        `Ran with ${placeholdersA.length} A-placeholders and ${placeholdersB.length} B-placeholders`,
+        `Ran with ${placeholdersSysA.length+placeholdersUserA.length} First-Call and ${placeholdersSysB.length+placeholdersUserB.length} Second-Call placeholders`,
         2
       );
       setActiveTab('results');
@@ -187,11 +204,11 @@ export default function Home() {
     }
   }
 
-  // — Tab contents
+  // — Configure Tab
   const configureTab = (
     <>
       {/* Model selector */}
-      <Card className="rounded-2xl shadow-sm mb-6">
+      <Card className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
         <SettingRow
           bottomBorder
           label={<Text strong>Model</Text>}
@@ -211,14 +228,14 @@ export default function Home() {
       </Card>
 
       {/* First Call */}
-      <Card title="First Call" className="rounded-2xl shadow-sm mb-6">
+      <Card title="First Call" className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
         <SettingRow bottomBorder label="System Prompt A">
           <TextArea
             rows={6}
             value={sysA}
             onChange={e => setSysA(e.target.value)}
-            placeholder="Enter system prompt A"
-            className="border-none bg-gray-100"
+            placeholder="System prompt A"
+            className="border-none bg-transparent"
           />
         </SettingRow>
         <SettingRow label="User Prompt A">
@@ -226,114 +243,152 @@ export default function Home() {
             rows={6}
             value={userA}
             onChange={e => setUserA(e.target.value)}
-            placeholder="Enter user prompt A"
-            className="border-none bg-gray-100"
+            placeholder="User prompt A"
+            className="border-none bg-transparent"
           />
         </SettingRow>
       </Card>
 
-      {/* A­-placeholder values */}
-      {placeholdersA.length > 0 && (
+      {/* First-Call Placeholder Values */}
+      {(placeholdersSysA.length + placeholdersUserA.length) > 0 && (
         <Card
-          title={
-            <>
-              Placeholder Values{' '}
-              <Tooltip title="Auto-detected from ${var} in First Call prompts">
-                <InfoCircleOutlined />
-              </Tooltip>
-            </>
-          }
+          title={<>First-Call Placeholders <Tooltip title="Detected ${var} in prompts"><InfoCircleOutlined /></Tooltip></>}
           className="rounded-2xl shadow-sm mb-6"
+          style={{ background: 'transparent' }}
         >
-          {placeholdersA.map(ph => (
-            <SettingRow key={ph} bottomBorder label={`Value for \`${ph}\``}>
-              <TextArea
-                rows={2}
-                value={valuesA[ph]}
-                onChange={e =>
-                  setValuesA(prev => ({ ...prev, [ph]: e.target.value }))
-                }
-                placeholder={`Enter value for ${ph}`}
-                className="border-none bg-gray-100 w-full sm:w-64"
-              />
-            </SettingRow>
-          ))}
+          {placeholdersSysA.length > 0 && (
+            <>
+              <Text strong className="text-teal-500">System A</Text>
+              {placeholdersSysA.map(ph => (
+                <SettingRow key={ph} bottomBorder label={`Value for \`${ph}\``}>
+                  <TextArea
+                    rows={2}
+                    value={valuesA[ph]}
+                    onChange={e =>
+                      setValuesA(prev => ({ ...prev, [ph]: e.target.value }))
+                    }
+                    placeholder={ph}
+                    className="border-none bg-transparent w-full sm:w-64"
+                  />
+                </SettingRow>
+              ))}
+            </>
+          )}
+          {placeholdersUserA.length > 0 && (
+            <>
+              <Text strong className="text-teal-500 mt-4">User A</Text>
+              {placeholdersUserA.map(ph => (
+                <SettingRow key={ph} bottomBorder label={`Value for \`${ph}\``}>
+                  <TextArea
+                    rows={2}
+                    value={valuesA[ph]}
+                    onChange={e =>
+                      setValuesA(prev => ({ ...prev, [ph]: e.target.value }))
+                    }
+                    placeholder={ph}
+                    className="border-none bg-transparent w-full sm:w-64"
+                  />
+                </SettingRow>
+              ))}
+            </>
+          )}
         </Card>
       )}
 
-      {/* First Response Injection */}
+      {/* First-Response Injection */}
       {resp1 && (
-        <Card title="First Response Injection" className="rounded-2xl shadow-sm mb-6">
+        <Card title="First Response Injection" className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
           <SettingRow
             bottomBorder
             label={<Text strong>Insert First Response</Text>}
-            description="Will become ${FIRST_RESPONSE} in B-prompts"
+            description="Creates ${FIRST_RESPONSE} for Second Call"
           >
-            <Tooltip title="Append full first response into Prompt B">
-              <Button size="small" onClick={() => setSysB(prev => prev + resp1)}>
-                To System B
-              </Button>
-            </Tooltip>
-            <Tooltip title="Append full first response into Prompt B">
-              <Button size="small" onClick={() => setUserB(prev => prev + resp1)}>
-                To User B
-              </Button>
-            </Tooltip>
+            <Button
+              size="small"
+              style={{ background: '#33B9B1', color: 'white' }}
+              onClick={() => setSysB(prev => prev + resp1)}
+            >
+              To System B
+            </Button>
+            <Button
+              size="small"
+              style={{ background: 'transparent', border: '1px solid #33B9B1', color: '#33B9B1' }}
+              onClick={() => setUserB(prev => prev + resp1)}
+            >
+              To User B
+            </Button>
           </SettingRow>
         </Card>
       )}
 
       {/* Second Call */}
-      <Card title="Second Call" className="rounded-2xl shadow-sm mb-6">
+      <Card title="Second Call" className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
         <SettingRow bottomBorder label="System Prompt B">
           <TextArea
             rows={6}
             value={sysB}
             onChange={e => setSysB(e.target.value)}
-            placeholder="Enter system prompt B"
-            className="border-none bg-gray-100"
+            placeholder="System prompt B"
+            className="border-none bg-transparent"
           />
         </SettingRow>
         <SettingRow
           label="User Prompt B"
-          description="Use ${placeholder} or let FIRST_RESPONSE inject"
+          description="Use ${var} or FIRST_RESPONSE"
         >
           <TextArea
             rows={6}
             value={userB}
             onChange={e => setUserB(e.target.value)}
-            placeholder="Enter user prompt B"
-            className="border-none bg-gray-100"
+            placeholder="User prompt B"
+            className="border-none bg-transparent"
           />
         </SettingRow>
       </Card>
 
-      {/* B­-placeholder values */}
-      {placeholdersB.length > 0 && (
+      {/* Second-Call Placeholder Values */}
+      {(placeholdersSysB.length + placeholdersUserB.length) > 0 && (
         <Card
-          title={
-            <>
-              Second-Prompt Values{' '}
-              <Tooltip title="Auto-detected from ${var} in Second Call prompts">
-                <InfoCircleOutlined />
-              </Tooltip>
-            </>
-          }
+          title={<>Second-Call Placeholders <Tooltip title="Detected ${var}"><InfoCircleOutlined /></Tooltip></>}
           className="rounded-2xl shadow-sm mb-6"
+          style={{ background: 'transparent' }}
         >
-          {placeholdersB.map(ph => (
-            <SettingRow key={ph} bottomBorder label={`Value for \`${ph}\``}>
-              <TextArea
-                rows={2}
-                value={valuesB[ph]}
-                onChange={e =>
-                  setValuesB(prev => ({ ...prev, [ph]: e.target.value }))
-                }
-                placeholder={`Enter value for ${ph}`}
-                className="border-none bg-gray-100 w-full sm:w-64"
-              />
-            </SettingRow>
-          ))}
+          {placeholdersSysB.length > 0 && (
+            <>
+              <Text strong className="text-teal-500">System B</Text>
+              {placeholdersSysB.map(ph => (
+                <SettingRow key={ph} bottomBorder label={`Value for \`${ph}\``}>
+                  <TextArea
+                    rows={2}
+                    value={valuesB[ph]}
+                    onChange={e =>
+                      setValuesB(prev => ({ ...prev, [ph]: e.target.value }))
+                    }
+                    placeholder={ph}
+                    className="border-none bg-transparent w-full sm:w-64"
+                  />
+                </SettingRow>
+              ))}
+            </>
+          )}
+          {placeholdersUserB.length > 0 && (
+            <>
+              <Text strong className="text-teal-500 mt-4">User B</Text>
+              {placeholdersUserB.map(ph => (
+                <SettingRow key={ph} bottomBorder label={`Value for \`${ph}\``}>
+                  <TextArea
+                    rows={2}
+                    value={valuesB[ph]}
+                    onChange={e =>
+                      setValuesB(prev => ({ ...prev, [ph]: e.target.value }))
+                    }
+                    placeholder={ph}
+                    className="border-none bg-transparent w-full sm:w-64"
+                  />
+                </SettingRow>
+              ))}
+            </>
+          )}
         </Card>
       )}
 
@@ -347,6 +402,7 @@ export default function Home() {
           onClick={runChain}
           loading={loading}
           className="rounded-full mt-4"
+          style={{ background: '#33B9B1', border: 'none' }}
         >
           Run Chain
         </Button>
@@ -354,21 +410,22 @@ export default function Home() {
     </>
   );
 
+  // — Results Tab
   const resultsTab = (
-    <Card title="Results" className="rounded-2xl shadow-sm my-6">
+    <Card title="Results" className="rounded-2xl shadow-sm my-6" style={{ background: 'white' }}>
       <Divider />
       <div className="grid md:grid-cols-2 gap-4">
         <TextArea
           rows={10}
           value={resp1}
           readOnly
-          className="border-none bg-gray-50"
+          className="border-none bg-transparent"
         />
         <TextArea
           rows={10}
           value={resp2}
           readOnly
-          className="border-none bg-gray-50"
+          className="border-none bg-transparent"
         />
       </div>
     </Card>
@@ -376,11 +433,8 @@ export default function Home() {
 
   return (
     <ConfigProvider theme={{ token: { colorPrimary: '#33B9B1' } }}>
-      <Layout className="min-h-screen bg-gray-50">
-        <Header 
-          className="bg-white shadow-sm px-6 flex items-center"
-          style={{ backgroundColor: '#fff' }}
-          >
+      <Layout className="min-h-screen bg-white">
+        <Header className="bg-white shadow-sm px-6 flex items-center" style={{ backgroundColor: 'white' }}>
           <Title level={3} className="!m-0 text-[#33B9B1]">
             Anamnai Prompt Tuner
           </Title>
