@@ -5,30 +5,33 @@ import OpenAI from 'openai';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Define a union for success vs error
+// Success and error shapes
 type Success = { first: string; second: string };
 type Error   = { error: string };
 type Data    = Success | Error;
+
+// Define the exact shape of the incoming JSON
+interface RunRequest {
+  model: string;
+  sysA: string;
+  userA: string;
+  sysB: string;
+  userB: string;
+  valsB: Record<string, string>;
+}
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<Data>
 ) {
   if (req.method !== 'POST') {
-    // Now valid against Data
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  try {
-    const { model, sysA, userA, sysB, userB, valsB } = req.body as {
-      model: string;
-      sysA: string;
-      userA: string;
-      sysB: string;
-      userB: string;
-      valsB: Record<string, string>;
-    };
+  // Cast to our RunRequest interface
+  const { model, sysA, userA, sysB, userB, valsB } = req.body as RunRequest;
 
+  try {
     // 1️⃣ First call
     const firstRaw = await openai.chat.completions.create({
       model,
@@ -39,17 +42,19 @@ export default async function handler(
     });
     const first = firstRaw.choices[0].message.content ?? '';
 
-    // 2️⃣ Build second‐call prompts by replacing placeholders
+    // 2️⃣ Build second-call prompts
     let bSys  = sysB;
     let bUser = userB;
 
-    // Custom placeholders from valsB
+    // Replace custom placeholders (${key})
     for (const [key, val] of Object.entries(valsB)) {
-      const use = val === 'FIRST_RESPONSE' ? first : val;
-      bSys  = bSys.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), use);
-      bUser = bUser.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), use);
+      const replacement = val === 'FIRST_RESPONSE' ? first : val;
+      const re = new RegExp(`\\$\\{${key}\\}`, 'g');
+      bSys  = bSys.replace(re, replacement);
+      bUser = bUser.replace(re, replacement);
     }
-    // Bare 'FIRST_RESPONSE' tokens
+
+    // Replace bare FIRST_RESPONSE tokens
     bSys  = bSys.replace(/FIRST_RESPONSE/g, first);
     bUser = bUser.replace(/FIRST_RESPONSE/g, first);
 
@@ -63,11 +68,13 @@ export default async function handler(
     });
     const second = secondRaw.choices[0].message.content ?? '';
 
-    // Return success shape
     return res.status(200).json({ first, second });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error(err);
-    // Also valid against Data
-    return res.status(500).json({ error: err.message || 'Unknown error' });
+    const message =
+      err instanceof Error
+        ? err.message
+        : 'An unknown error occurred while calling the API.';
+    return res.status(500).json({ error: message });
   }
 }
