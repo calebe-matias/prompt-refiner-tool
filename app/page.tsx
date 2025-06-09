@@ -1,6 +1,7 @@
+
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ConfigProvider,
   Layout,
@@ -11,6 +12,7 @@ import {
   Typography,
   Divider,
   message,
+  Tag,
 } from 'antd';
 import { LoadingOutlined, PlayCircleFilled } from '@ant-design/icons';
 
@@ -29,7 +31,7 @@ const MODELS = [
 type ModelType = typeof MODELS[number];
 
 /**
- * Row layout matching Anamnai Design System
+ * Reusable row layout matching Anamnai Design
  */
 function SettingRow({
   label,
@@ -67,6 +69,33 @@ export default function Home() {
   const [resp2, setResp2] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Placeholder detection and values
+  const [placeholders, setPlaceholders] = useState<string[]>([]);
+  const [placeholderValues, setPlaceholderValues] = useState<Record<string,string>>({});
+
+  // Detect ${var} placeholders in sysA and userA
+  useEffect(() => {
+    const regex = /\$\{([^}]+)\}/g;
+    const found = new Set<string>();
+    const combined = `${sysA} ${userA}`;
+    let match;
+    while ((match = regex.exec(combined)) !== null) {
+      found.add(match[1]);
+    }
+    setPlaceholders(Array.from(found));
+  }, [sysA, userA]);
+
+  // Initialize placeholderValues when placeholders change
+  useEffect(() => {
+    setPlaceholderValues((prev) => {
+      const updated: Record<string,string> = {};
+      placeholders.forEach((ph) => {
+        updated[ph] = prev[ph] ?? '';
+      });
+      return updated;
+    });
+  }, [placeholders]);
+
   async function runChain() {
     if (!sysA.trim() && !userA.trim()) {
       return message.error('First prompts cannot be empty');
@@ -75,15 +104,34 @@ export default function Home() {
     setResp1('');
     setResp2('');
     try {
+      // Replace placeholders in first prompts
+      let processedSysA = sysA;
+      let processedUserA = userA;
+      Object.entries(placeholderValues).forEach(([key, val]) => {
+        const pat = new RegExp(`\\$\\{${key}\\}`, 'g');
+        processedSysA = processedSysA.replace(pat, val);
+        processedUserA = processedUserA.replace(pat, val);
+      });
+
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, sysA, userA, sysB, userB }),
+        body: JSON.stringify({
+          model,
+          sysA: processedSysA,
+          userA: processedUserA,
+          sysB,
+          userB,
+        }),
       });
-      const { first, second, error } = await res.json();
-      if (error) throw new Error(error);
-      setResp1(first);
-      setResp2(second);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setResp1(data.first);
+      setResp2(data.second);
+      message.success(
+        `Computed with ${placeholders.length} placeholder(s)`,
+        2
+      );
     } catch (err: any) {
       message.error(err.message || 'Unexpected error');
     } finally {
@@ -94,23 +142,27 @@ export default function Home() {
   return (
     <ConfigProvider theme={{ token: { colorPrimary: '#33B9B1' } }}>
       <Layout className="min-h-screen bg-gray-50">
-        <Header className="bg-white shadow-sm flex items-center px-6" style={{ backgroundColor: '#fff' }}>
+        <Header
+          className="bg-white shadow-sm flex items-center px-6"
+          style={{ backgroundColor: '#fff' }}
+        >
           <Title level={3} className="!m-0 text-[#33B9B1]">
-            Anamnai - Refinador de Prompts
+            Anamnai Prompt Tuner
           </Title>
         </Header>
         <Content className="py-6 px-4 md:px-0 max-w-4xl mx-auto">
+          {/* Model selector */}
           <Card className="rounded-2xl shadow-sm mb-6">
             <SettingRow
               bottomBorder
               label={<Text strong>Model</Text>}
+              description="Choose your LLM"
               children={
                 <Select
                   value={model}
                   onChange={setModel}
                   className="w-full sm:w-64"
                   placeholder="Select model"
-                  optionFilterProp="children"
                 >
                   {MODELS.map((m) => (
                     <Option key={m} value={m}>
@@ -122,6 +174,7 @@ export default function Home() {
             />
           </Card>
 
+          {/* First call */}
           <Card title="First Call" className="rounded-2xl shadow-sm mb-6">
             <SettingRow
               bottomBorder
@@ -150,11 +203,48 @@ export default function Home() {
             />
           </Card>
 
+          {/* Placeholder values input */}
+          {placeholders.length > 0 && (
+            <Card title="Placeholder Values" className="rounded-2xl shadow-sm mb-6">
+              {placeholders.map((ph) => (
+                <SettingRow
+                  key={ph}
+                  bottomBorder
+                  label={`Value for ${ph}`}
+                  children={
+                    <Input
+                      value={placeholderValues[ph]}
+                      onChange={(e) =>
+                        setPlaceholderValues((prev) => ({ ...prev, [ph]: e.target.value }))
+                      }
+                      placeholder={`Enter value for ${ph}`}
+                      className="w-full sm:w-64"
+                    />
+                  }
+                />
+              ))}
+              <div className="px-4">
+                <Text type="secondary">
+                  Click a tag to inject placeholder into Prompt B.
+                </Text>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {placeholders.map((ph) => (
+                    <Tag
+                      key={ph}
+                      color="cyan"
+                      className="cursor-pointer"
+                      onClick={() => setUserB((prev) => prev + `\${${ph}}`)}
+                    >
+                      {`$\{${ph}\}`}
+                    </Tag>
+                  ))}
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Second call */}
           <Card title="Second Call" className="rounded-2xl shadow-sm mb-6">
-            <Text className="px-4 text-xs text-gray-500">
-              Use <code>{'{{FIRST_RESPONSE}}'}</code> to inject the first answer.
-            </Text>
-            <Divider className="my-2" />
             <SettingRow
               bottomBorder
               label="System Prompt B"
@@ -170,6 +260,7 @@ export default function Home() {
             />
             <SettingRow
               label="User Prompt B"
+              description="Use ${placeholder} syntax or click tags above"
               children={
                 <TextArea
                   rows={4}
@@ -182,6 +273,7 @@ export default function Home() {
             />
           </Card>
 
+          {/* Run button */}
           <div className="px-4">
             <Button
               type="primary"
@@ -195,8 +287,20 @@ export default function Home() {
             </Button>
           </div>
 
+          {/* Results */}
           {(resp1 || resp2) && (
             <Card title="Results" className="rounded-2xl shadow-sm my-6">
+              {/* Visual placeholder indicator */}
+              {placeholders.length > 0 && (
+                <div className="mb-4">
+                  <Text strong>Applied placeholders:</Text>{' '}
+                  {placeholders.map((ph) => (
+                    <Tag key={ph} color="green">
+                      {ph}
+                    </Tag>
+                  ))}
+                </div>
+              )}
               <Divider />
               <div className="grid md:grid-cols-2 gap-4">
                 <TextArea
