@@ -70,35 +70,37 @@ function SettingRow({
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'config' | 'results'>('config');
 
-  // form
+  // Form state
   const [model, setModel] = useState<ModelType>(MODELS[0]);
   const [sysA, setSysA] = useState('');
   const [userA, setUserA] = useState('');
   const [sysB, setSysB] = useState('');
   const [userB, setUserB] = useState('');
 
-  // outputs
+  // Outputs
   const [resp1, setResp1] = useState('');
   const [resp2, setResp2] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // highlight feedback
+  // Highlight feedback
   const [highlightKey, setHighlightKey] = useState<string | null>(null);
 
-  // placeholders in A
+  // First-call placeholders
   const [phSysA, setPhSysA] = useState<string[]>([]);
   const [phUserA, setPhUserA] = useState<string[]>([]);
   const [valsA, setValsA] = useState<Record<string,string>>({});
 
   useEffect(() => {
-    const rx = /\$\{([^}]+)\}/g, found = new Set<string>();
+    const rx = /\$\{([^}]+)\}/g;
+    const found = new Set<string>();
     let m;
     while ((m = rx.exec(sysA))) found.add(m[1]);
     setPhSysA([...found]);
   }, [sysA]);
 
   useEffect(() => {
-    const rx = /\$\{([^}]+)\}/g, found = new Set<string>();
+    const rx = /\$\{([^}]+)\}/g;
+    const found = new Set<string>();
     let m;
     while ((m = rx.exec(userA))) found.add(m[1]);
     setPhUserA([...found]);
@@ -107,25 +109,29 @@ export default function Home() {
   useEffect(() => {
     setValsA(prev => {
       const nxt: Record<string,string> = {};
-      [...phSysA, ...phUserA].forEach(ph => (nxt[ph] = prev[ph] ?? ''));
+      [...phSysA, ...phUserA].forEach(ph => {
+        nxt[ph] = prev[ph] ?? '';
+      });
       return nxt;
     });
   }, [phSysA, phUserA]);
 
-  // placeholders in B
+  // Second-call placeholders
   const [phSysB, setPhSysB] = useState<string[]>([]);
   const [phUserB, setPhUserB] = useState<string[]>([]);
   const [valsB, setValsB] = useState<Record<string,string>>({});
 
   useEffect(() => {
-    const rx = /\$\{([^}]+)\}/g, found = new Set<string>();
+    const rx = /\$\{([^}]+)\}/g;
+    const found = new Set<string>();
     let m;
     while ((m = rx.exec(sysB))) found.add(m[1]);
     setPhSysB([...found]);
   }, [sysB]);
 
   useEffect(() => {
-    const rx = /\$\{([^}]+)\}/g, found = new Set<string>();
+    const rx = /\$\{([^}]+)\}/g;
+    const found = new Set<string>();
     let m;
     while ((m = rx.exec(userB))) found.add(m[1]);
     setPhUserB([...found]);
@@ -155,7 +161,7 @@ export default function Home() {
     setResp2('');
 
     try {
-      // replace A
+      // Replace A-placeholders
       let pSysA = sysA, pUserA = userA;
       Object.entries(valsA).forEach(([k,v]) => {
         const re = new RegExp(`\\$\\{${k}\\}`, 'g');
@@ -163,7 +169,7 @@ export default function Home() {
         pUserA = pUserA.replace(re, v);
       });
 
-      // replace B except FIRST_RESPONSE
+      // Replace B-placeholders (except FIRST_RESPONSE)
       let pSysB = sysB, pUserB = userB;
       Object.entries(valsB).forEach(([k,v]) => {
         if (k !== 'FIRST_RESPONSE') {
@@ -173,10 +179,11 @@ export default function Home() {
         }
       });
 
+      // Call API
       const res = await fetch('/api/run', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ model, sysA:pSysA, userA:pUserA, sysB:pSysB, userB:pUserB }),
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({ model, sysA:pSysA, userA:pUserA, sysB:pSysB, userB:pUserB }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -200,7 +207,7 @@ export default function Home() {
       <Card className="rounded-2xl shadow-sm mb-6" style={{ background:'white' }}>
         <SettingRow bottomBorder label={<Text strong>Model</Text>} description="Choose your LLM">
           <Select value={model} onChange={setModel} className="w-full sm:w-64">
-            {MODELS.map(m=> <Option key={m} value={m}>{m}</Option>)}
+            {MODELS.map(m => <Option key={m} value={m}>{m}</Option>)}
           </Select>
         </SettingRow>
       </Card>
@@ -237,7 +244,10 @@ export default function Home() {
                     rows={2}
                     value={valsA[ph]}
                     onChange={e=>setValsA(p=>({...p,[ph]:e.target.value}))}
-                    className={`border-none bg-transparent w-full sm:w-64 ${valsA[ph].includes('${FIRST_RESPONSE}')?'ring-2 ring-teal-500':''}`}
+                    className={`border-none bg-transparent w-full sm:w-64 ${
+                      (valsA[ph] ?? '').includes('${FIRST_RESPONSE}') ? 'ring-2 ring-teal-500' : ''
+                    }`}
+                    placeholder={ph}
                   />
                 </SettingRow>
               ))}
@@ -252,7 +262,10 @@ export default function Home() {
                     rows={2}
                     value={valsA[ph]}
                     onChange={e=>setValsA(p=>({...p,[ph]:e.target.value}))}
-                    className={`border-none bg-transparent w-full sm:w-64 ${valsA[ph].includes('${FIRST_RESPONSE}')?'ring-2 ring-teal-500':''}`}
+                    className={`border-none bg-transparent w-full sm:w-64 ${
+                      (valsA[ph] ?? '').includes('${FIRST_RESPONSE}') ? 'ring-2 ring-teal-500' : ''
+                    }`}
+                    placeholder={ph}
                   />
                 </SettingRow>
               ))}
@@ -265,7 +278,7 @@ export default function Home() {
         message="Using FIRST_RESPONSE"
         description={
           <>
-            Insert <code>${'{FIRST_RESPONSE}'}</code> into any Second-Call prompt or placeholder—fields containing it get a badge.
+            Insert <code>${'{FIRST_RESPONSE}'}</code> into any Second-Call prompt or placeholder. Fields containing it get a badge.
           </>
         }
         type="info"
@@ -274,14 +287,17 @@ export default function Home() {
       />
 
       <Card title="Second Call" className="rounded-2xl shadow-sm mb-6" style={{ background:'white' }}>
-        <SettingRow bottomBorder label={
-          <>
-            System Prompt B{' '}
-            {sysB.includes('${FIRST_RESPONSE}') && (
-              <Badge count="FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }} />
-            )}
-          </>
-        }>
+        <SettingRow
+          bottomBorder
+          label={
+            <>
+              System Prompt B{' '}
+              {sysB.includes('${FIRST_RESPONSE}') && (
+                <Badge count="FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }} />
+              )}
+            </>
+          }
+        >
           <TextArea
             rows={6}
             value={sysB}
@@ -290,14 +306,17 @@ export default function Home() {
             placeholder="System prompt B"
           />
         </SettingRow>
-        <SettingRow label={
-          <>
-            User Prompt B{' '}
-            {userB.includes('${FIRST_RESPONSE}') && (
-              <Badge count="FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }} />
-            )}
-          </>
-        } description="Use ${var} or FIRST_RESPONSE">
+        <SettingRow
+          label={
+            <>
+              User Prompt B{' '}
+              {userB.includes('${FIRST_RESPONSE}') && (
+                <Badge count="FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }} />
+              )}
+            </>
+          }
+          description="Use ${var} or FIRST_RESPONSE"
+        >
           <TextArea
             rows={6}
             value={userB}
@@ -319,10 +338,13 @@ export default function Home() {
                     rows={2}
                     value={valsB[ph]}
                     onChange={e=>setValsB(p=>({...p,[ph]:e.target.value}))}
-                    className={`border-none bg-transparent w-full sm:w-64 ${valsB[ph].includes('${FIRST_RESPONSE}')?'ring-2 ring-teal-500':''}`}
+                    className={`border-none bg-transparent w-full sm:w-64 ${
+                      (valsB[ph] ?? '').includes('${FIRST_RESPONSE}') ? 'ring-2 ring-teal-500' : ''
+                    }`}
+                    placeholder={ph}
                   />
-                  {valsB[ph].includes('${FIRST_RESPONSE}') && (
-                    <Badge count="FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }}/>
+                  {(valsB[ph] ?? '').includes('${FIRST_RESPONSE}') && (
+                    <Badge count="FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }} />
                   )}
                 </SettingRow>
               ))}
@@ -337,10 +359,13 @@ export default function Home() {
                     rows={2}
                     value={valsB[ph]}
                     onChange={e=>setValsB(p=>({...p,[ph]:e.target.value}))}
-                    className={`border-none bg-transparent w-full sm:w-64 ${valsB[ph].includes('${FIRST_RESPONSE}')?'ring-2 ring-teal-500':''}`}
+                    className={`border-none bg-transparent w-full sm:w-64 ${
+                      (valsB[ph] ?? '').includes('${FIRST_RESPONSE}') ? 'ring-2 ring-teal-500' : ''
+                    }`}
+                    placeholder={ph}
                   />
-                  {valsB[ph].includes('${FIRST_RESPONSE}') && (
-                    <Badge count="FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }}/>
+                  {(valsB[ph] ?? '').includes('${FIRST_RESPONSE}') && (
+                    <Badge count="FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }} />
                   )}
                 </SettingRow>
               ))}
@@ -358,7 +383,7 @@ export default function Home() {
           onClick={runChain}
           loading={loading}
           className="rounded-full mt-4"
-          style={{ background:'#33B9B1', border:'none' }}
+          style={{ background: '#33B9B1', border: 'none' }}
         >
           Run Chain
         </Button>
@@ -369,7 +394,6 @@ export default function Home() {
   const resultsTab = (
     <Card title="Results" className="rounded-2xl shadow-sm my-6" style={{ background:'white' }}>
       <Divider />
-      {/* full-width outputs */}
       <div className="flex gap-4">
         <TextArea
           rows={15}
