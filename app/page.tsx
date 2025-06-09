@@ -70,7 +70,7 @@ function SettingRow({
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'config' | 'results'>('config');
-
+  const [messageApi, contextHolder] = message.useMessage();
   // Prompts
   const [model, setModel] = useState<ModelType>(MODELS[0]);
   const [sysA, setSysA] = useState('');
@@ -143,7 +143,7 @@ export default function Home() {
 
   async function runChain() {
     if (!sysA.trim() && !userA.trim()) {
-      return message.error('First prompts cannot be empty');
+      return messageApi.error('First prompts cannot be empty');
     }
     setLoading(true);
     setResp1('');
@@ -176,13 +176,13 @@ export default function Home() {
 
       setResp1(data.first);
       setResp2(data.second);
-      message.success(
+      messageApi.success(
         `Done—A:${phSysA.length + phUserA.length}, B:${phSysB.length + phUserB.length}`,
         2
       );
       setActiveTab('results');
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : String(e));
+      messageApi.error(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
@@ -466,6 +466,9 @@ export default function Home() {
 
   return (
     <ConfigProvider theme={{ token: { colorPrimary: '#33B9B1' } }}>
+      {/* Provider for Antd messages (toasts) */}
+      {contextHolder}
+      {/* Main Layout */}
       <Layout className="min-h-screen bg-white">
         <Header className="bg-white shadow-sm px-6 flex items-center">
           <Title level={3} className="!m-0 text-[#33B9B1]">
