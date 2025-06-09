@@ -11,7 +11,6 @@ import {
   Typography,
   Divider,
   message,
-  Tag,
   Tabs,
   Tooltip,
   Alert,
@@ -21,7 +20,6 @@ import {
   LoadingOutlined,
   PlayCircleFilled,
   InfoCircleOutlined,
-  CopyOutlined,
 } from '@ant-design/icons';
 
 const { Header, Content } = Layout;
@@ -70,7 +68,7 @@ function SettingRow({
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'config' | 'results'>('config');
 
-  // Form state
+  // Prompt state
   const [model, setModel] = useState<ModelType>(MODELS[0]);
   const [sysA, setSysA] = useState('');
   const [userA, setUserA] = useState('');
@@ -82,28 +80,23 @@ export default function Home() {
   const [resp2, setResp2] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Highlight feedback
-  const [highlightKey, setHighlightKey] = useState<string | null>(null);
-
-  // First-call placeholders
+  // Placeholders in A
   const [phSysA, setPhSysA] = useState<string[]>([]);
   const [phUserA, setPhUserA] = useState<string[]>([]);
   const [valsA, setValsA] = useState<Record<string,string>>({});
 
   useEffect(() => {
-    const rx = /\$\{([^}]+)\}/g;
-    const found = new Set<string>();
+    const rx = /\$\{([^}]+)\}/g, out = new Set<string>();
     let m;
-    while ((m = rx.exec(sysA))) found.add(m[1]);
-    setPhSysA([...found]);
+    while ((m = rx.exec(sysA))) out.add(m[1]);
+    setPhSysA([...out]);
   }, [sysA]);
 
   useEffect(() => {
-    const rx = /\$\{([^}]+)\}/g;
-    const found = new Set<string>();
+    const rx = /\$\{([^}]+)\}/g, out = new Set<string>();
     let m;
-    while ((m = rx.exec(userA))) found.add(m[1]);
-    setPhUserA([...found]);
+    while ((m = rx.exec(userA))) out.add(m[1]);
+    setPhUserA([...out]);
   }, [userA]);
 
   useEffect(() => {
@@ -116,74 +109,63 @@ export default function Home() {
     });
   }, [phSysA, phUserA]);
 
-  // Second-call placeholders
+  // Placeholders in B
   const [phSysB, setPhSysB] = useState<string[]>([]);
   const [phUserB, setPhUserB] = useState<string[]>([]);
   const [valsB, setValsB] = useState<Record<string,string>>({});
 
   useEffect(() => {
-    const rx = /\$\{([^}]+)\}/g;
-    const found = new Set<string>();
+    const rx = /\$\{([^}]+)\}/g, out = new Set<string>();
     let m;
-    while ((m = rx.exec(sysB))) found.add(m[1]);
-    setPhSysB([...found]);
+    while ((m = rx.exec(sysB))) out.add(m[1]);
+    setPhSysB([...out]);
   }, [sysB]);
 
   useEffect(() => {
-    const rx = /\$\{([^}]+)\}/g;
-    const found = new Set<string>();
+    const rx = /\$\{([^}]+)\}/g, out = new Set<string>();
     let m;
-    while ((m = rx.exec(userB))) found.add(m[1]);
-    setPhUserB([...found]);
+    while ((m = rx.exec(userB))) out.add(m[1]);
+    setPhUserB([...out]);
   }, [userB]);
 
   useEffect(() => {
     setValsB(prev => {
       const nxt: Record<string,string> = {};
       [...phSysB, ...phUserB].forEach(ph => {
-        nxt[ph] = ph === 'FIRST_RESPONSE' ? resp1 : prev[ph] ?? '';
+        nxt[ph] = prev[ph] ?? '';
       });
       return nxt;
     });
-  }, [phSysB, phUserB, resp1]);
-
-  function flash(key: string) {
-    setHighlightKey(key);
-    setTimeout(() => setHighlightKey(null), 1200);
-  }
+  }, [phSysB, phUserB]);
 
   async function runChain() {
     if (!sysA.trim() && !userA.trim()) {
       return message.error('First prompts cannot be empty');
     }
     setLoading(true);
-    setResp1('');
-    setResp2('');
+    setResp1(''); setResp2('');
 
     try {
-      // Replace A-placeholders
+      // 1️⃣ Replace A-placeholders locally
       let pSysA = sysA, pUserA = userA;
       Object.entries(valsA).forEach(([k,v]) => {
         const re = new RegExp(`\\$\\{${k}\\}`, 'g');
-        pSysA = pSysA.replace(re, v);
-        pUserA = pUserA.replace(re, v);
+        pSysA   = pSysA.replace(re, v);
+        pUserA  = pUserA.replace(re, v);
       });
 
-      // Replace B-placeholders (except FIRST_RESPONSE)
-      let pSysB = sysB, pUserB = userB;
-      Object.entries(valsB).forEach(([k,v]) => {
-        if (k !== 'FIRST_RESPONSE') {
-          const re = new RegExp(`\\$\\{${k}\\}`, 'g');
-          pSysB = pSysB.replace(re, v);
-          pUserB = pUserB.replace(re, v);
-        }
-      });
-
-      // Call API
+      // 2️⃣ Send both calls to API
       const res = await fetch('/api/run', {
-        method: 'POST',
-        headers: { 'Content-Type':'application/json' },
-        body: JSON.stringify({ model, sysA:pSysA, userA:pUserA, sysB:pSysB, userB:pUserB }),
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({
+          model,
+          sysA: pSysA,
+          userA: pUserA,
+          sysB,
+          userB,
+          valsB,             // pass placeholder values
+        }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -204,6 +186,7 @@ export default function Home() {
 
   const configureTab = (
     <>
+      {/* Model */}
       <Card className="rounded-2xl shadow-sm mb-6" style={{ background:'white' }}>
         <SettingRow bottomBorder label={<Text strong>Model</Text>} description="Choose your LLM">
           <Select value={model} onChange={setModel} className="w-full sm:w-64">
@@ -212,73 +195,57 @@ export default function Home() {
         </SettingRow>
       </Card>
 
+      {/* First Call */}
       <Card title="First Call" className="rounded-2xl shadow-sm mb-6" style={{ background:'white' }}>
         <SettingRow bottomBorder label="System Prompt A">
-          <TextArea
-            rows={6}
-            value={sysA}
-            onChange={e=>setSysA(e.target.value)}
-            className={`border-none ${highlightKey==='sysA'?'ring-2 ring-teal-500':''}`}
-            placeholder="System prompt A"
-          />
+          <TextArea rows={6} value={sysA} onChange={e=>setSysA(e.target.value)} placeholder="System prompt A" />
         </SettingRow>
         <SettingRow label="User Prompt A">
-          <TextArea
-            rows={6}
-            value={userA}
-            onChange={e=>setUserA(e.target.value)}
-            className={`border-none ${highlightKey==='userA'?'ring-2 ring-teal-500':''}`}
-            placeholder="User prompt A"
-          />
+          <TextArea rows={6} value={userA} onChange={e=>setUserA(e.target.value)} placeholder="User prompt A" />
         </SettingRow>
       </Card>
 
+      {/* First-Call Placeholders */}
       {(phSysA.length||phUserA.length)>0 && (
         <Card title="First-Call Placeholders" className="rounded-2xl shadow-sm mb-6" style={{ background:'transparent' }}>
-          {phSysA.length>0 && (
-            <>
-              <Text strong className="text-teal-500">System A</Text>
-              {phSysA.map(ph => (
-                <SettingRow key={ph} bottomBorder label={`Value for \`${ph}\``}>
-                  <TextArea
-                    rows={2}
-                    value={valsA[ph]}
-                    onChange={e=>setValsA(p=>({...p,[ph]:e.target.value}))}
-                    className={`border-none bg-transparent w-full sm:w-64 ${
-                      (valsA[ph] ?? '').includes('${FIRST_RESPONSE}') ? 'ring-2 ring-teal-500' : ''
-                    }`}
-                    placeholder={ph}
-                  />
-                </SettingRow>
-              ))}
-            </>
-          )}
-          {phUserA.length>0 && (
-            <>
-              <Text strong className="text-teal-500 mt-4">User A</Text>
-              {phUserA.map(ph => (
-                <SettingRow key={ph} bottomBorder label={`Value for \`${ph}\``}>
-                  <TextArea
-                    rows={2}
-                    value={valsA[ph]}
-                    onChange={e=>setValsA(p=>({...p,[ph]:e.target.value}))}
-                    className={`border-none bg-transparent w-full sm:w-64 ${
-                      (valsA[ph] ?? '').includes('${FIRST_RESPONSE}') ? 'ring-2 ring-teal-500' : ''
-                    }`}
-                    placeholder={ph}
-                  />
-                </SettingRow>
-              ))}
-            </>
-          )}
+          {phSysA.length>0 && <>
+            <Text strong className="text-teal-500">System A</Text>
+            {phSysA.map(ph=>(
+              <SettingRow key={ph} bottomBorder label={`Value for \`${ph}\``}>
+                <TextArea
+                  rows={2}
+                  value={valsA[ph]}
+                  onChange={e=>setValsA(p=>({...p,[ph]:e.target.value}))}
+                  placeholder={ph}
+                  className="border-none bg-transparent w-full sm:w-64"
+                />
+              </SettingRow>
+            ))}
+          </>}
+          {phUserA.length>0 && <>
+            <Text strong className="text-teal-500 mt-4">User A</Text>
+            {phUserA.map(ph=>(
+              <SettingRow key={ph} bottomBorder label={`Value for \`${ph}\``}>
+                <TextArea
+                  rows={2}
+                  value={valsA[ph]}
+                  onChange={e=>setValsA(p=>({...p,[ph]:e.target.value}))}
+                  placeholder={ph}
+                  className="border-none bg-transparent w-full sm:w-64"
+                />
+              </SettingRow>
+            ))}
+          </>}
         </Card>
       )}
 
+      {/* Info for FIRST_RESPONSE */}
       <Alert
-        message="Using FIRST_RESPONSE"
+        message="Referencing First Response"
         description={
           <>
-            Insert <code>${'{FIRST_RESPONSE}'}</code> into any Second-Call prompt or placeholder. Fields containing it get a badge.
+            To inject the **first API call’s output**, simply type <Text code>FIRST_RESPONSE</Text> in any
+            <Text code>Second Call</Text> prompt or placeholder. Fields containing it get a teal badge.
           </>
         }
         type="info"
@@ -286,94 +253,81 @@ export default function Home() {
         className="mb-4"
       />
 
+      {/* Second Call */}
       <Card title="Second Call" className="rounded-2xl shadow-sm mb-6" style={{ background:'white' }}>
-        <SettingRow
-          bottomBorder
-          label={
-            <>
-              System Prompt B{' '}
-              {sysB.includes('${FIRST_RESPONSE}') && (
-                <Badge count="FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }} />
-              )}
-            </>
-          }
-        >
+        <SettingRow bottomBorder label={
+          <>
+            System Prompt B{' '}
+            {sysB.includes('FIRST_RESPONSE') && (
+              <Badge count="→ FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }} />
+            )}
+          </>
+        }>
           <TextArea
             rows={6}
             value={sysB}
             onChange={e=>setSysB(e.target.value)}
-            className={`border-none ${highlightKey==='sysB'?'ring-2 ring-teal-500':''}`}
             placeholder="System prompt B"
           />
         </SettingRow>
-        <SettingRow
-          label={
-            <>
-              User Prompt B{' '}
-              {userB.includes('${FIRST_RESPONSE}') && (
-                <Badge count="FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }} />
-              )}
-            </>
-          }
-          description="Use ${var} or FIRST_RESPONSE"
-        >
+        <SettingRow label={
+          <>
+            User Prompt B{' '}
+            {userB.includes('FIRST_RESPONSE') && (
+              <Badge count="→ FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }} />
+            )}
+          </>
+        } description="Type FIRST_RESPONSE or any ${var}">
           <TextArea
             rows={6}
             value={userB}
             onChange={e=>setUserB(e.target.value)}
-            className={`border-none ${highlightKey==='userB'?'ring-2 ring-teal-500':''}`}
             placeholder="User prompt B"
           />
         </SettingRow>
       </Card>
 
+      {/* Second-Call Placeholders */}
       {(phSysB.length||phUserB.length)>0 && (
         <Card title="Second-Call Placeholders" className="rounded-2xl shadow-sm mb-6" style={{ background:'transparent' }}>
-          {phSysB.length>0 && (
-            <>
-              <Text strong className="text-teal-500">System B</Text>
-              {phSysB.map(ph => (
-                <SettingRow key={ph} bottomBorder label={`Value for \`${ph}\``}>
-                  <TextArea
-                    rows={2}
-                    value={valsB[ph]}
-                    onChange={e=>setValsB(p=>({...p,[ph]:e.target.value}))}
-                    className={`border-none bg-transparent w-full sm:w-64 ${
-                      (valsB[ph] ?? '').includes('${FIRST_RESPONSE}') ? 'ring-2 ring-teal-500' : ''
-                    }`}
-                    placeholder={ph}
-                  />
-                  {(valsB[ph] ?? '').includes('${FIRST_RESPONSE}') && (
-                    <Badge count="FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }} />
-                  )}
-                </SettingRow>
-              ))}
-            </>
-          )}
-          {phUserB.length>0 && (
-            <>
-              <Text strong className="text-teal-500 mt-4">User B</Text>
-              {phUserB.map(ph => (
-                <SettingRow key={ph} bottomBorder label={`Value for \`${ph}\``}>
-                  <TextArea
-                    rows={2}
-                    value={valsB[ph]}
-                    onChange={e=>setValsB(p=>({...p,[ph]:e.target.value}))}
-                    className={`border-none bg-transparent w-full sm:w-64 ${
-                      (valsB[ph] ?? '').includes('${FIRST_RESPONSE}') ? 'ring-2 ring-teal-500' : ''
-                    }`}
-                    placeholder={ph}
-                  />
-                  {(valsB[ph] ?? '').includes('${FIRST_RESPONSE}') && (
-                    <Badge count="FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }} />
-                  )}
-                </SettingRow>
-              ))}
-            </>
-          )}
+          {phSysB.length>0 && <>
+            <Text strong className="text-teal-500">System B</Text>
+            {phSysB.map(ph=>(
+              <SettingRow key={ph} bottomBorder label={`Value for \`${ph}\``}>
+                <TextArea
+                  rows={2}
+                  value={valsB[ph]}
+                  onChange={e=>setValsB(p=>({...p,[ph]:e.target.value}))}
+                  placeholder={ph}
+                  className="border-none bg-transparent w-full sm:w-64"
+                />
+                { (valsB[ph] ?? '').includes('FIRST_RESPONSE') && (
+                  <Badge count="→ FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }} />
+                )}
+              </SettingRow>
+            ))}
+          </>}
+          {phUserB.length>0 && <>
+            <Text strong className="text-teal-500 mt-4">User B</Text>
+            {phUserB.map(ph=>(
+              <SettingRow key={ph} bottomBorder label={`Value for \`${ph}\``}>
+                <TextArea
+                  rows={2}
+                  value={valsB[ph]}
+                  onChange={e=>setValsB(p=>({...p,[ph]:e.target.value}))}
+                  placeholder={ph}
+                  className="border-none bg-transparent w-full sm:w-64"
+                />
+                { (valsB[ph] ?? '').includes('FIRST_RESPONSE') && (
+                  <Badge count="→ FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }} />
+                )}
+              </SettingRow>
+            ))}
+          </>}
         </Card>
       )}
 
+      {/* Run button */}
       <div className="px-4 mb-6">
         <Button
           type="primary"
@@ -426,7 +380,7 @@ export default function Home() {
             className="mb-6"
             items={[
               { key: 'config', label: 'Configure', children: configureTab },
-              { key: 'results', label: 'Results', children: resultsTab },
+              { key: 'results', label: 'Results',   children: resultsTab   },
             ]}
           />
         </Content>
