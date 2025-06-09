@@ -1,103 +1,221 @@
-import Image from "next/image";
+'use client';
+
+import React, { useState } from 'react';
+import {
+  ConfigProvider,
+  Layout,
+  Card,
+  Input,
+  Select,
+  Button,
+  Typography,
+  Divider,
+  message,
+} from 'antd';
+import { LoadingOutlined, PlayCircleFilled } from '@ant-design/icons';
+
+const { Header, Content } = Layout;
+const { TextArea } = Input;
+const { Title, Text } = Typography;
+const { Option } = Select;
+
+const MODELS = [
+  'gpt-4.1-nano',
+  'gpt-4.1-mini',
+  'gpt-4.1',
+  'o3-mini',
+] as const;
+
+type ModelType = typeof MODELS[number];
+
+/**
+ * Row layout matching Anamnai Design System
+ */
+function SettingRow({
+  label,
+  description,
+  children,
+  bottomBorder = false,
+}: {
+  label: React.ReactNode;
+  description?: React.ReactNode;
+  children: React.ReactNode;
+  bottomBorder?: boolean;
+}) {
+  return (
+    <div
+      className={`grid grid-cols-1 md:grid-cols-2 items-center py-4 px-4 sm:px-6 gap-y-2 md:gap-y-0 ${
+        bottomBorder ? 'border-b border-gray-200' : ''
+      }`}
+    >
+      <div>
+        <div className="text-sm font-medium mb-1 text-gray-800">{label}</div>
+        {description && <div className="text-xs text-gray-500">{description}</div>}
+      </div>
+      <div className="flex justify-start md:justify-end">{children}</div>
+    </div>
+  );
+}
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [model, setModel] = useState<ModelType>(MODELS[0]);
+  const [sysA, setSysA] = useState('');
+  const [userA, setUserA] = useState('');
+  const [sysB, setSysB] = useState('');
+  const [userB, setUserB] = useState('');
+  const [resp1, setResp1] = useState('');
+  const [resp2, setResp2] = useState('');
+  const [loading, setLoading] = useState(false);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+  async function runChain() {
+    if (!sysA.trim() && !userA.trim()) {
+      return message.error('First prompts cannot be empty');
+    }
+    setLoading(true);
+    setResp1('');
+    setResp2('');
+    try {
+      const res = await fetch('/api/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, sysA, userA, sysB, userB }),
+      });
+      const { first, second, error } = await res.json();
+      if (error) throw new Error(error);
+      setResp1(first);
+      setResp2(second);
+    } catch (err: any) {
+      message.error(err.message || 'Unexpected error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <ConfigProvider theme={{ token: { colorPrimary: '#33B9B1' } }}>
+      <Layout className="min-h-screen bg-gray-50">
+        <Header className="bg-white shadow-sm flex items-center px-6" style={{ backgroundColor: '#fff' }}>
+          <Title level={3} className="!m-0 text-[#33B9B1]">
+            Anamnai - Refinador de Prompts
+          </Title>
+        </Header>
+        <Content className="py-6 px-4 md:px-0 max-w-4xl mx-auto">
+          <Card className="rounded-2xl shadow-sm mb-6">
+            <SettingRow
+              bottomBorder
+              label={<Text strong>Model</Text>}
+              children={
+                <Select
+                  value={model}
+                  onChange={setModel}
+                  className="w-full sm:w-64"
+                  placeholder="Select model"
+                  optionFilterProp="children"
+                >
+                  {MODELS.map((m) => (
+                    <Option key={m} value={m}>
+                      {m}
+                    </Option>
+                  ))}
+                </Select>
+              }
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+          </Card>
+
+          <Card title="First Call" className="rounded-2xl shadow-sm mb-6">
+            <SettingRow
+              bottomBorder
+              label="System Prompt A"
+              children={
+                <TextArea
+                  rows={4}
+                  value={sysA}
+                  onChange={(e) => setSysA(e.target.value)}
+                  placeholder="Enter system prompt A"
+                  className="border-none bg-gray-100"
+                />
+              }
+            />
+            <SettingRow
+              label="User Prompt A"
+              children={
+                <TextArea
+                  rows={4}
+                  value={userA}
+                  onChange={(e) => setUserA(e.target.value)}
+                  placeholder="Enter user prompt A"
+                  className="border-none bg-gray-100"
+                />
+              }
+            />
+          </Card>
+
+          <Card title="Second Call" className="rounded-2xl shadow-sm mb-6">
+            <Text className="px-4 text-xs text-gray-500">
+              Use <code>{'{{FIRST_RESPONSE}}'}</code> to inject the first answer.
+            </Text>
+            <Divider className="my-2" />
+            <SettingRow
+              bottomBorder
+              label="System Prompt B"
+              children={
+                <TextArea
+                  rows={4}
+                  value={sysB}
+                  onChange={(e) => setSysB(e.target.value)}
+                  placeholder="Enter system prompt B"
+                  className="border-none bg-gray-100"
+                />
+              }
+            />
+            <SettingRow
+              label="User Prompt B"
+              children={
+                <TextArea
+                  rows={4}
+                  value={userB}
+                  onChange={(e) => setUserB(e.target.value)}
+                  placeholder="Enter user prompt B"
+                  className="border-none bg-gray-100"
+                />
+              }
+            />
+          </Card>
+
+          <div className="px-4">
+            <Button
+              type="primary"
+              block
+              size="large"
+              icon={loading ? <LoadingOutlined /> : <PlayCircleFilled />}
+              onClick={runChain}
+              loading={loading}
+            >
+              Run Chain
+            </Button>
+          </div>
+
+          {(resp1 || resp2) && (
+            <Card title="Results" className="rounded-2xl shadow-sm my-6">
+              <Divider />
+              <div className="grid md:grid-cols-2 gap-4">
+                <TextArea
+                  rows={8}
+                  value={resp1}
+                  readOnly
+                  className="border-none bg-gray-50"
+                />
+                <TextArea
+                  rows={8}
+                  value={resp2}
+                  readOnly
+                  className="border-none bg-gray-50"
+                />
+              </div>
+            </Card>
+          )}
+        </Content>
+      </Layout>
+    </ConfigProvider>
   );
 }
