@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Ant Design 5 “reset.css” already kills most overrides,
+   but we add a tiny tweak for Ant inputs inside our flex grid */
+.ant-input, .ant-select-selector, .ant-btn {
+  @apply rounded-md;
+}
