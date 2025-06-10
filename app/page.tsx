@@ -15,7 +15,11 @@ import {
   Alert,
   Badge,
 } from 'antd';
-import { LoadingOutlined, PlayCircleFilled } from '@ant-design/icons';
+import {
+  LoadingOutlined,
+  PlayCircleFilled,
+  InfoCircleOutlined,
+} from '@ant-design/icons';
 
 const { Header, Content } = Layout;
 const { TextArea } = Input;
@@ -29,12 +33,6 @@ const MODELS = [
   'o3-mini',
 ] as const;
 type ModelType = typeof MODELS[number];
-
-interface RunResponse {
-  first: string;
-  second: string;
-  error?: string;
-}
 
 function SettingRow({
   label,
@@ -61,9 +59,7 @@ function SettingRow({
           <div className="text-xs text-gray-500">{description}</div>
         )}
       </div>
-      <div className="flex justify-start md:justify-end items-center gap-2">
-        {children}
-      </div>
+      <div className="flex justify-start md:justify-end items-center gap-2">{children}</div>
     </div>
   );
 }
@@ -71,6 +67,7 @@ function SettingRow({
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'config' | 'results'>('config');
   const [messageApi, contextHolder] = message.useMessage();
+
   // Prompts
   const [model, setModel] = useState<ModelType>(MODELS[0]);
   const [sysA, setSysA] = useState('');
@@ -83,7 +80,7 @@ export default function Home() {
   const [resp2, setResp2] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Placeholders A
+  // Placeholders da Primeira Chamada (A)
   const [phSysA, setPhSysA] = useState<string[]>([]);
   const [phUserA, setPhUserA] = useState<string[]>([]);
   const [valsA, setValsA] = useState<Record<string, string>>({});
@@ -112,7 +109,7 @@ export default function Home() {
     });
   }, [phSysA, phUserA]);
 
-  // Placeholders B
+  // Placeholders da Segunda Chamada (B)
   const [phSysB, setPhSysB] = useState<string[]>([]);
   const [phUserB, setPhUserB] = useState<string[]>([]);
   const [valsB, setValsB] = useState<Record<string, string>>({});
@@ -143,14 +140,14 @@ export default function Home() {
 
   async function runChain() {
     if (!sysA.trim() && !userA.trim()) {
-      return messageApi.error('First prompts cannot be empty');
+      return messageApi.error('Os prompts iniciais não podem ficar vazios');
     }
     setLoading(true);
     setResp1('');
     setResp2('');
 
     try {
-      // 1. Replace A-placeholders locally
+      // 1. Substituir placeholders A
       let pSysA = sysA, pUserA = userA;
       Object.entries(valsA).forEach(([k, v]) => {
         const re = new RegExp(`\\$\\{${k}\\}`, 'g');
@@ -158,7 +155,7 @@ export default function Home() {
         pUserA = pUserA.replace(re, v);
       });
 
-      // 2. Call API with raw B-prompts and valsB
+      // 2. Chamar API com prompts B e valsB
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -171,13 +168,13 @@ export default function Home() {
           valsB,
         }),
       });
-      const data = (await res.json()) as RunResponse;
+      const data = await res.json() as RunResponse;
       if (data.error) throw new Error(data.error);
 
       setResp1(data.first);
       setResp2(data.second);
       messageApi.success(
-        `Done—A:${phSysA.length + phUserA.length}, B:${phSysB.length + phUserB.length}`,
+        `Concluído — A: ${phSysA.length + phUserA.length}, B: ${phSysB.length + phUserB.length}`,
         2
       );
       setActiveTab('results');
@@ -190,74 +187,61 @@ export default function Home() {
 
   const configureTab = (
     <>
-      {/* Model selector */}
-      <Card
-        className="rounded-2xl shadow-sm mb-6"
-        style={{ background: 'white' }}
-      >
+      {/* Seletor de Modelo */}
+      <Card className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
         <SettingRow
           bottomBorder
-          label={<Text strong>Model</Text>}
-          description="Choose your LLM"
+          label={<Text strong>Modelo</Text>}
+          description="Escolha seu LLM"
         >
           <Select
             value={model}
             onChange={setModel}
             className="w-full sm:w-64"
           >
-            {MODELS.map((m) => (
-              <Option key={m} value={m}>
-                {m}
-              </Option>
+            {MODELS.map(m => (
+              <Option key={m} value={m}>{m}</Option>
             ))}
           </Select>
         </SettingRow>
       </Card>
 
-      {/* First Call */}
-      <Card
-        title="First Call"
-        className="rounded-2xl shadow-sm mb-6"
-        style={{ background: 'white' }}
-      >
-        <SettingRow bottomBorder label="System Prompt A">
+      {/* Primeira Chamada */}
+      <Card title="Primeira Chamada" className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
+        <SettingRow bottomBorder label="Prompt de Sistema A">
           <TextArea
             rows={6}
             value={sysA}
-            onChange={(e) => setSysA(e.target.value)}
-            placeholder="System prompt A"
+            onChange={e => setSysA(e.target.value)}
+            placeholder="Prompt de sistema A"
           />
         </SettingRow>
-        <SettingRow label="User Prompt A">
+        <SettingRow label="Prompt de Usuário A">
           <TextArea
             rows={6}
             value={userA}
-            onChange={(e) => setUserA(e.target.value)}
-            placeholder="User prompt A"
+            onChange={e => setUserA(e.target.value)}
+            placeholder="Prompt de usuário A"
           />
         </SettingRow>
       </Card>
 
-      {/* First-Call Placeholders */}
+      {/* Placeholders da Primeira Chamada */}
       {(phSysA.length || phUserA.length) > 0 && (
         <Card
-          title="First-Call Placeholders"
+          title="Espaços Reservados da Primeira Chamada"
           className="rounded-2xl shadow-sm mb-6"
           style={{ background: 'transparent' }}
         >
           {phSysA.length > 0 && (
             <>
-              <Text strong className="text-teal-500">
-                System A
-              </Text>
-              {phSysA.map((ph) => (
-                <SettingRow key={ph} bottomBorder label={`Value for \`${ph}\``}>
+              <Text strong className="text-teal-500">Sistema A</Text>
+              {phSysA.map(ph => (
+                <SettingRow key={ph} bottomBorder label={`Valor para \`${ph}\``}>
                   <TextArea
                     rows={2}
                     value={valsA[ph]}
-                    onChange={(e) =>
-                      setValsA((p) => ({ ...p, [ph]: e.target.value }))
-                    }
+                    onChange={e => setValsA(p => ({ ...p, [ph]: e.target.value }))}
                     placeholder={ph}
                     className="border-none bg-transparent w-full sm:w-64"
                   />
@@ -267,17 +251,13 @@ export default function Home() {
           )}
           {phUserA.length > 0 && (
             <>
-              <Text strong className="text-teal-500 mt-4">
-                User A
-              </Text>
-              {phUserA.map((ph) => (
-                <SettingRow key={ph} bottomBorder label={`Value for \`${ph}\``}>
+              <Text strong className="text-teal-500 mt-4">Usuário A</Text>
+              {phUserA.map(ph => (
+                <SettingRow key={ph} bottomBorder label={`Valor para \`${ph}\``}>
                   <TextArea
                     rows={2}
                     value={valsA[ph]}
-                    onChange={(e) =>
-                      setValsA((p) => ({ ...p, [ph]: e.target.value }))
-                    }
+                    onChange={e => setValsA(p => ({ ...p, [ph]: e.target.value }))}
                     placeholder={ph}
                     className="border-none bg-transparent w-full sm:w-64"
                   />
@@ -288,13 +268,14 @@ export default function Home() {
         </Card>
       )}
 
-      {/* FIRST_RESPONSE usage */}
+      {/* Instruções FIRST_RESPONSE */}
       <Alert
-        message="Referencing First Response"
+        message="Referenciando a Primeira Resposta"
         description={
           <>
-            Type <Text code>FIRST_RESPONSE</Text> in any Second-Call prompt or
-            placeholder; fields containing it show a badge.
+            Digite <Text code>FIRST_RESPONSE</Text> em qualquer prompt ou
+            placeholder da <Text strong>Segunda Chamada</Text>. Campos que
+            contêm esse texto exibem um badge.
           </>
         }
         type="info"
@@ -302,22 +283,15 @@ export default function Home() {
         className="mb-4"
       />
 
-      {/* Second Call */}
-      <Card
-        title="Second Call"
-        className="rounded-2xl shadow-sm mb-6"
-        style={{ background: 'white' }}
-      >
+      {/* Segunda Chamada */}
+      <Card title="Segunda Chamada" className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
         <SettingRow
           bottomBorder
           label={
             <>
-              System Prompt B{' '}
+              Prompt de Sistema B{' '}
               {sysB.includes('FIRST_RESPONSE') && (
-                <Badge
-                  count="FIRST_RESPONSE"
-                  style={{ backgroundColor: '#33B9B1' }}
-                />
+                <Badge count="FIRST_RESPONSE" style={{ backgroundColor: '#33B9B1' }} />
               )}
             </>
           }
@@ -325,65 +299,53 @@ export default function Home() {
           <TextArea
             rows={6}
             value={sysB}
-            onChange={(e) => setSysB(e.target.value)}
-            placeholder="System prompt B"
+            onChange={e => setSysB(e.target.value)}
+            placeholder="Prompt de sistema B"
           />
         </SettingRow>
         <SettingRow
           label={
             <>
-              User Prompt B{' '}
+              Prompt de Usuário B{' '}
               {userB.includes('FIRST_RESPONSE') && (
-                <Badge
-                  count="FIRST_RESPONSE"
-                  style={{ backgroundColor: '#33B9B1' }}
-                />
+                <Badge count="FIRST_RESPONSE" style={{ backgroundColor: '#33B9B1' }} />
               )}
             </>
           }
-          description="Type FIRST_RESPONSE or ${var}"
+          description="Digite FIRST_RESPONSE ou ${var}"
         >
           <TextArea
             rows={6}
             value={userB}
-            onChange={(e) => setUserB(e.target.value)}
-            placeholder="User prompt B"
+            onChange={e => setUserB(e.target.value)}
+            placeholder="Prompt de usuário B"
           />
         </SettingRow>
       </Card>
 
-      {/* Second-Call Placeholders */}
+      {/* Placeholders da Segunda Chamada */}
       {(phSysB.length || phUserB.length) > 0 && (
         <Card
-          title="Second-Call Placeholders"
+          title="Espaços Reservados da Segunda Chamada"
           className="rounded-2xl shadow-sm mb-6"
           style={{ background: 'transparent' }}
         >
           {phSysB.length > 0 && (
             <>
-              <Text strong className="text-teal-500">
-                System B
-              </Text>
-              {phSysB.map((ph) => (
-                <SettingRow key={ph} bottomBorder label={`Value for \`${ph}\``}>
+              <Text strong className="text-teal-500">Sistema B</Text>
+              {phSysB.map(ph => (
+                <SettingRow key={ph} bottomBorder label={`Valor para \`${ph}\``}>
                   <TextArea
                     rows={2}
                     value={valsB[ph]}
-                    onChange={(e) =>
-                      setValsB((p) => ({ ...p, [ph]: e.target.value }))
-                    }
+                    onChange={e => setValsB(p => ({ ...p, [ph]: e.target.value }))}
                     placeholder={ph}
                     className={`border-none bg-transparent w-full sm:w-64 ${
-                      (valsB[ph] ?? '').includes('FIRST_RESPONSE')
-                        ? 'ring-2 ring-teal-500'
-                        : ''
+                      (valsB[ph] ?? '').includes('FIRST_RESPONSE') ? 'ring-2 ring-teal-500' : ''
                     }`}
                   />
                   {(valsB[ph] ?? '').includes('FIRST_RESPONSE') && (
-                    <Badge
-                      count="FIRST_RESPONSE"
-                      style={{ backgroundColor: '#33B9B1' }}
-                    />
+                    <Badge count="FIRST_RESPONSE" style={{ backgroundColor: '#33B9B1' }} />
                   )}
                 </SettingRow>
               ))}
@@ -391,29 +353,20 @@ export default function Home() {
           )}
           {phUserB.length > 0 && (
             <>
-              <Text strong className="text-teal-500 mt-4">
-                User B
-              </Text>
-              {phUserB.map((ph) => (
-                <SettingRow key={ph} bottomBorder label={`Value for \`${ph}\``}>
+              <Text strong className="text-teal-500 mt-4">Usuário B</Text>
+              {phUserB.map(ph => (
+                <SettingRow key={ph} bottomBorder label={`Valor para \`${ph}\``}>
                   <TextArea
                     rows={2}
                     value={valsB[ph]}
-                    onChange={(e) =>
-                      setValsB((p) => ({ ...p, [ph]: e.target.value }))
-                    }
+                    onChange={e => setValsB(p => ({ ...p, [ph]: e.target.value }))}
                     placeholder={ph}
                     className={`border-none bg-transparent w-full sm:w-64 ${
-                      (valsB[ph] ?? '').includes('FIRST_RESPONSE')
-                        ? 'ring-2 ring-teal-500'
-                        : ''
+                      (valsB[ph] ?? '').includes('FIRST_RESPONSE') ? 'ring-2 ring-teal-500' : ''
                     }`}
                   />
                   {(valsB[ph] ?? '').includes('FIRST_RESPONSE') && (
-                    <Badge
-                      count="FIRST_RESPONSE"
-                      style={{ backgroundColor: '#33B9B1' }}
-                    />
+                    <Badge count="FIRST_RESPONSE" style={{ backgroundColor: '#33B9B1' }} />
                   )}
                 </SettingRow>
               ))}
@@ -422,7 +375,7 @@ export default function Home() {
         </Card>
       )}
 
-      {/* Run */}
+      {/* Botão de execução */}
       <div className="px-4 mb-6">
         <Button
           type="primary"
@@ -434,15 +387,16 @@ export default function Home() {
           className="rounded-full mt-4"
           style={{ background: '#33B9B1', border: 'none' }}
         >
-          Run Chain
+          Executar Fluxo
         </Button>
       </div>
     </>
   );
 
+  // Aba de resultados
   const resultsTab = (
     <Card
-      title="Results"
+      title="Resultados"
       className="rounded-2xl shadow-sm my-6"
       style={{ background: 'white' }}
     >
@@ -466,23 +420,22 @@ export default function Home() {
 
   return (
     <ConfigProvider theme={{ token: { colorPrimary: '#33B9B1' } }}>
-      {/* Provider for Antd messages (toasts) */}
+      {/* Contexto de mensagens */}
       {contextHolder}
-      {/* Main Layout */}
       <Layout className="min-h-screen bg-white">
-        <Header className="bg-white shadow-sm px-6 flex items-center">
+        <Header className="bg-white shadow-sm px-6 flex items-center" style={{ backgroundColor: 'white' }}>
           <Title level={3} className="!m-0 text-[#33B9B1]">
-            Anamnai Prompt Tuner
+            Anamnai - Ferramenta de Refinamento dos Prompts
           </Title>
         </Header>
         <Content className="py-6 px-4 md:px-0 max-w-4xl mx-auto">
           <Tabs
             activeKey={activeTab}
-            onChange={(key) => setActiveTab(key as 'config' | 'results')}
+            onChange={key => setActiveTab(key as 'config' | 'results')}
             className="mb-6"
             items={[
-              { key: 'config', label: 'Configure', children: configureTab },
-              { key: 'results', label: 'Results', children: resultsTab },
+              { key: 'config', label: 'Configurar', children: configureTab },
+              { key: 'results', label: 'Resultados', children: resultsTab },
             ]}
           />
         </Content>
