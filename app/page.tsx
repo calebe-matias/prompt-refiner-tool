@@ -14,6 +14,7 @@ import {
   Tabs,
   Alert,
   Badge,
+  Switch,
 } from 'antd';
 import {
   LoadingOutlined,
@@ -64,9 +65,26 @@ function SettingRow({
           <div className="text-xs text-gray-500">{description}</div>
         )}
       </div>
-      <div className="flex justify-start md:justify-end items-center gap-2">{children}</div>
+      <div className="flex justify-start md:justify-end items-center gap-2">
+        {children}
+      </div>
     </div>
   );
+}
+
+// Remove recursivamente todas as chaves "source"
+function removeSources(obj: any): any {
+  if (Array.isArray(obj)) {
+    return obj.map(removeSources);
+  } else if (obj && typeof obj === 'object') {
+    const out: any = {};
+    for (const k in obj) {
+      if (k === 'source') continue;
+      out[k] = removeSources(obj[k]);
+    }
+    return out;
+  }
+  return obj;
 }
 
 export default function Home() {
@@ -85,7 +103,13 @@ export default function Home() {
   const [resp2, setResp2] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Placeholders da Primeira Chamada (A)
+  // Switch para incluir fontes
+  const [incluirFontes, setIncluirFontes] = useState(true);
+
+  // Resposta 1 processada (com ou sem fontes)
+  const [previewFirst, setPreviewFirst] = useState('');
+
+  // Placeholders A
   const [phSysA, setPhSysA] = useState<string[]>([]);
   const [phUserA, setPhUserA] = useState<string[]>([]);
   const [valsA, setValsA] = useState<Record<string, string>>({});
@@ -107,14 +131,12 @@ export default function Home() {
   useEffect(() => {
     setValsA(prev => {
       const nxt: Record<string, string> = {};
-      [...phSysA, ...phUserA].forEach(ph => {
-        nxt[ph] = prev[ph] ?? '';
-      });
+      [...phSysA, ...phUserA].forEach(ph => (nxt[ph] = prev[ph] ?? ''));
       return nxt;
     });
   }, [phSysA, phUserA]);
 
-  // Placeholders da Segunda Chamada (B)
+  // Placeholders B
   const [phSysB, setPhSysB] = useState<string[]>([]);
   const [phUserB, setPhUserB] = useState<string[]>([]);
   const [valsB, setValsB] = useState<Record<string, string>>({});
@@ -136,12 +158,26 @@ export default function Home() {
   useEffect(() => {
     setValsB(prev => {
       const nxt: Record<string, string> = {};
-      [...phSysB, ...phUserB].forEach(ph => {
-        nxt[ph] = prev[ph] ?? '';
-      });
+      [...phSysB, ...phUserB].forEach(ph => (nxt[ph] = prev[ph] ?? ''));
       return nxt;
     });
   }, [phSysB, phUserB]);
+
+  // Atualiza previewFirst sempre que mudar resp1 ou incluirFontes
+  useEffect(() => {
+    if (!resp1) {
+      setPreviewFirst('');
+      return;
+    }
+    try {
+      const obj = JSON.parse(resp1);
+      const result = incluirFontes ? obj : removeSources(obj);
+      setPreviewFirst(JSON.stringify(result, null, 2));
+    } catch {
+      // se não for JSON válido, apenas mostra raw
+      setPreviewFirst(resp1);
+    }
+  }, [resp1, incluirFontes]);
 
   async function runChain() {
     if (!sysA.trim() && !userA.trim()) {
@@ -152,7 +188,7 @@ export default function Home() {
     setResp2('');
 
     try {
-      // 1. Substituir placeholders A
+      // 1) Substituir placeholders A localmente
       let pSysA = sysA, pUserA = userA;
       Object.entries(valsA).forEach(([k, v]) => {
         const re = new RegExp(`\\$\\{${k}\\}`, 'g');
@@ -160,26 +196,19 @@ export default function Home() {
         pUserA = pUserA.replace(re, v);
       });
 
-      // 2. Chamar API com prompts B e valsB
+      // 2) Enviar para API (sysB, userB e valsB)
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          sysA: pSysA,
-          userA: pUserA,
-          sysB,
-          userB,
-          valsB,
-        }),
+        body: JSON.stringify({ model, sysA: pSysA, userA: pUserA, sysB, userB, valsB }),
       });
-      const data = await res.json() as RunResponse;
+      const data = (await res.json()) as RunResponse;
       if (data.error) throw new Error(data.error);
 
       setResp1(data.first);
       setResp2(data.second);
       messageApi.success(
-        `Concluído — A: ${phSysA.length + phUserA.length}, B: ${phSysB.length + phUserB.length}`,
+        `Concluído — A:${phSysA.length + phUserA.length}, B:${phSysB.length + phUserB.length}`,
         2
       );
       setActiveTab('results');
@@ -192,18 +221,14 @@ export default function Home() {
 
   const configureTab = (
     <>
-      {/* Seletor de Modelo */}
+      {/* Modelo */}
       <Card className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
         <SettingRow
           bottomBorder
           label={<Text strong>Modelo</Text>}
           description="Escolha seu LLM"
         >
-          <Select
-            value={model}
-            onChange={setModel}
-            className="w-full sm:w-64"
-          >
+          <Select value={model} onChange={setModel} className="w-full sm:w-64">
             {MODELS.map(m => (
               <Option key={m} value={m}>{m}</Option>
             ))}
@@ -214,30 +239,16 @@ export default function Home() {
       {/* Primeira Chamada */}
       <Card title="Primeira Chamada" className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
         <SettingRow bottomBorder label="Prompt de Sistema A">
-          <TextArea
-            rows={6}
-            value={sysA}
-            onChange={e => setSysA(e.target.value)}
-            placeholder="Prompt de sistema A"
-          />
+          <TextArea rows={6} value={sysA} onChange={e => setSysA(e.target.value)} placeholder="Prompt de sistema A" />
         </SettingRow>
         <SettingRow label="Prompt de Usuário A">
-          <TextArea
-            rows={6}
-            value={userA}
-            onChange={e => setUserA(e.target.value)}
-            placeholder="Prompt de usuário A"
-          />
+          <TextArea rows={6} value={userA} onChange={e => setUserA(e.target.value)} placeholder="Prompt de usuário A" />
         </SettingRow>
       </Card>
 
-      {/* Placeholders da Primeira Chamada */}
+      {/* Placeholders da 1ª Chamada */}
       {(phSysA.length || phUserA.length) > 0 && (
-        <Card
-          title="Espaços Reservados da Primeira Chamada"
-          className="rounded-2xl shadow-sm mb-6"
-          style={{ background: 'transparent' }}
-        >
+        <Card title="Placeholders da Primeira Chamada" className="rounded-2xl shadow-sm mb-6" style={{ background: 'transparent' }}>
           {phSysA.length > 0 && (
             <>
               <Text strong className="text-teal-500">Sistema A</Text>
@@ -273,9 +284,32 @@ export default function Home() {
         </Card>
       )}
 
+      {/* Switch Incluir Fontes */}
+      <Card className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
+        <SettingRow
+          bottomBorder
+          label={<Text strong>Incluir campos "source"</Text>}
+          description="Quando desativado, remove todos os campos 'source' da Resposta 1"
+        >
+          <Switch
+            checked={incluirFontes}
+            onChange={setIncluirFontes}
+          />
+        </SettingRow>
+
+        {/* Preview Dinâmico */}
+        <Text strong>Pré-visualização Resposta 1:</Text>
+        <TextArea
+          rows={8}
+          value={previewFirst}
+          readOnly
+          className="border border-gray-200 rounded-md bg-gray-50 mt-2"
+        />
+      </Card>
+
       {/* Instruções FIRST_RESPONSE */}
       <Alert
-        message="Referenciando a Primeira Resposta"
+        message="Referenciando Primeira Resposta"
         description={
           <>
             Digite <Text code>FIRST_RESPONSE</Text> em qualquer prompt ou
@@ -290,51 +324,31 @@ export default function Home() {
 
       {/* Segunda Chamada */}
       <Card title="Segunda Chamada" className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
-        <SettingRow
-          bottomBorder
-          label={
-            <>
-              Prompt de Sistema B{' '}
-              {sysB.includes('FIRST_RESPONSE') && (
-                <Badge count="FIRST_RESPONSE" style={{ backgroundColor: '#33B9B1' }} />
-              )}
-            </>
-          }
-        >
-          <TextArea
-            rows={6}
-            value={sysB}
-            onChange={e => setSysB(e.target.value)}
-            placeholder="Prompt de sistema B"
-          />
+        <SettingRow bottomBorder label={
+          <>
+            Prompt de Sistema B{' '}
+            {sysB.includes('FIRST_RESPONSE') && (
+              <Badge count="FIRST_RESPONSE" style={{ backgroundColor: '#33B9B1' }} />
+            )}
+          </>
+        }>
+          <TextArea rows={6} value={sysB} onChange={e => setSysB(e.target.value)} placeholder="Prompt de sistema B" />
         </SettingRow>
-        <SettingRow
-          label={
-            <>
-              Prompt de Usuário B{' '}
-              {userB.includes('FIRST_RESPONSE') && (
-                <Badge count="FIRST_RESPONSE" style={{ backgroundColor: '#33B9B1' }} />
-              )}
-            </>
-          }
-          description="Digite FIRST_RESPONSE ou ${var}"
-        >
-          <TextArea
-            rows={6}
-            value={userB}
-            onChange={e => setUserB(e.target.value)}
-            placeholder="Prompt de usuário B"
-          />
+        <SettingRow label={
+          <>
+            Prompt de Usuário B{' '}
+            {userB.includes('FIRST_RESPONSE') && (
+              <Badge count="FIRST_RESPONSE" style={{ backgroundColor: '#33B9B1' }} />
+            )}
+          </>
+        } description="Digite FIRST_RESPONSE ou ${var}">
+          <TextArea rows={6} value={userB} onChange={e => setUserB(e.target.value)} placeholder="Prompt de usuário B" />
         </SettingRow>
       </Card>
 
-      {/* Placeholders da Segunda Chamada */}
+      {/* Placeholders da 2ª Chamada */}
       {(phSysB.length || phUserB.length) > 0 && (
-        <Card
-          title="Espaços Reservados da Segunda Chamada"
-          className="rounded-2xl shadow-sm mb-6"
-          style={{ background: 'transparent' }}
-        >
+        <Card title="Placeholders da Segunda Chamada" className="rounded-2xl shadow-sm mb-6" style={{ background: 'transparent' }}>
           {phSysB.length > 0 && (
             <>
               <Text strong className="text-teal-500">Sistema B</Text>
@@ -380,7 +394,7 @@ export default function Home() {
         </Card>
       )}
 
-      {/* Botão de execução */}
+      {/* Botão Executar */}
       <div className="px-4 mb-6">
         <Button
           type="primary"
@@ -398,34 +412,18 @@ export default function Home() {
     </>
   );
 
-  // Aba de resultados
   const resultsTab = (
-    <Card
-      title="Resultados"
-      className="rounded-2xl shadow-sm my-6"
-      style={{ background: 'white' }}
-    >
+    <Card title="Resultados" className="rounded-2xl shadow-sm my-6" style={{ background: 'white' }}>
       <Divider />
       <div className="flex gap-4">
-        <TextArea
-          rows={15}
-          value={resp1}
-          readOnly
-          className="w-1/2 border-none bg-transparent"
-        />
-        <TextArea
-          rows={15}
-          value={resp2}
-          readOnly
-          className="w-1/2 border-none bg-transparent"
-        />
+        <TextArea rows={15} value={resp1} readOnly className="w-1/2 border-none bg-transparent" />
+        <TextArea rows={15} value={resp2} readOnly className="w-1/2 border-none bg-transparent" />
       </div>
     </Card>
   );
 
   return (
     <ConfigProvider theme={{ token: { colorPrimary: '#33B9B1' } }}>
-      {/* Contexto de mensagens */}
       {contextHolder}
       <Layout className="min-h-screen bg-white">
         <Header className="bg-white shadow-sm px-6 flex items-center" style={{ backgroundColor: 'white' }}>
@@ -436,7 +434,7 @@ export default function Home() {
         <Content className="py-6 px-4 md:px-0 max-w-4xl mx-auto">
           <Tabs
             activeKey={activeTab}
-            onChange={key => setActiveTab(key as 'config' | 'results')}
+            onChange={k => setActiveTab(k as 'config' | 'results')}
             className="mb-6"
             items={[
               { key: 'config', label: 'Configurar', children: configureTab },
