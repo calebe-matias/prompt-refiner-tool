@@ -18,7 +18,6 @@ import {
 import {
   LoadingOutlined,
   PlayCircleFilled,
-  InfoCircleOutlined,
 } from '@ant-design/icons';
 
 const { Header, Content } = Layout;
