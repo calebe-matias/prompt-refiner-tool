@@ -1,18 +1,17 @@
-// pages/api/run.ts
-
 import type { NextApiRequest, NextApiResponse } from 'next';
 import OpenAI from 'openai';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Success and error shapes
+// formatos de retorno
 type Success = { first: string; second: string };
 type Error   = { error: string };
 type Data    = Success | Error;
 
-// Define the exact shape of the incoming JSON
+// shape da requisição
 interface RunRequest {
-  model: string;
+  modelA: string;
+  modelB: string;
   sysA: string;
   userA: string;
   sysB: string;
@@ -25,16 +24,15 @@ export default async function handler(
   res: NextApiResponse<Data>
 ) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ error: 'Método não permitido' });
   }
 
-  // Cast to our RunRequest interface
-  const { model, sysA, userA, sysB, userB, valsB } = req.body as RunRequest;
+  const { modelA, modelB, sysA, userA, sysB, userB, valsB } = req.body as RunRequest;
 
   try {
-    // 1️⃣ First call
+    // 1️⃣ Primeira chamada com modelA
     const firstRaw = await openai.chat.completions.create({
-      model,
+      model: modelA,
       messages: [
         { role: 'system', content: sysA },
         { role: 'user',   content: userA },
@@ -42,25 +40,23 @@ export default async function handler(
     });
     const first = firstRaw.choices[0].message.content ?? '';
 
-    // 2️⃣ Build second-call prompts
+    // 2️⃣ Gerar prompts da segunda chamada
     let bSys  = sysB;
     let bUser = userB;
 
-    // Replace custom placeholders (${key})
     for (const [key, val] of Object.entries(valsB)) {
-      const replacement = val === 'FIRST_RESPONSE' ? first : val;
+      const use = val === 'FIRST_RESPONSE' ? first : val;
       const re = new RegExp(`\\$\\{${key}\\}`, 'g');
-      bSys  = bSys.replace(re, replacement);
-      bUser = bUser.replace(re, replacement);
+      bSys  = bSys.replace(re, use);
+      bUser = bUser.replace(re, use);
     }
-
-    // Replace bare FIRST_RESPONSE tokens
+    // bare token
     bSys  = bSys.replace(/FIRST_RESPONSE/g, first);
     bUser = bUser.replace(/FIRST_RESPONSE/g, first);
 
-    // 3️⃣ Second call
+    // 3️⃣ Segunda chamada com modelB
     const secondRaw = await openai.chat.completions.create({
-      model,
+      model: modelB,
       messages: [
         { role: 'system', content: bSys },
         { role: 'user',   content: bUser },
@@ -71,10 +67,7 @@ export default async function handler(
     return res.status(200).json({ first, second });
   } catch (err: unknown) {
     console.error(err);
-    const message =
-      err instanceof Error
-        ? err.message
-        : 'An unknown error occurred while calling the API.';
-    return res.status(500).json({ error: message });
+    const msg = err instanceof Error ? err.message : 'Erro desconhecido';
+    return res.status(500).json({ error: msg });
   }
 }

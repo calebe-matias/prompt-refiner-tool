@@ -92,8 +92,11 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'config' | 'results'>('config');
   const [messageApi, contextHolder] = message.useMessage();
 
+  // Modelos separados
+  const [modelA, setModelA] = useState<ModelType>(MODELS[0]);
+  const [modelB, setModelB] = useState<ModelType>(MODELS[0]);
+
   // Prompts
-  const [model, setModel] = useState<ModelType>(MODELS[0]);
   const [sysA, setSysA] = useState('');
   const [userA, setUserA] = useState('');
   const [sysB, setSysB] = useState('');
@@ -117,14 +120,14 @@ export default function Home() {
 
   useEffect(() => {
     const rx = /\$\{([^}]+)\}/g, out = new Set<string>();
-    let m;
+    let m: RegExpExecArray | null;
     while ((m = rx.exec(sysA))) out.add(m[1]);
     setPhSysA([...out]);
   }, [sysA]);
 
   useEffect(() => {
     const rx = /\$\{([^}]+)\}/g, out = new Set<string>();
-    let m;
+    let m: RegExpExecArray | null;
     while ((m = rx.exec(userA))) out.add(m[1]);
     setPhUserA([...out]);
   }, [userA]);
@@ -144,14 +147,14 @@ export default function Home() {
 
   useEffect(() => {
     const rx = /\$\{([^}]+)\}/g, out = new Set<string>();
-    let m;
+    let m: RegExpExecArray | null;
     while ((m = rx.exec(sysB))) out.add(m[1]);
     setPhSysB([...out]);
   }, [sysB]);
 
   useEffect(() => {
     const rx = /\$\{([^}]+)\}/g, out = new Set<string>();
-    let m;
+    let m: RegExpExecArray | null;
     while ((m = rx.exec(userB))) out.add(m[1]);
     setPhUserB([...out]);
   }, [userB]);
@@ -175,7 +178,6 @@ export default function Home() {
       const result = incluirFontes ? obj : removeSources(obj);
       setPreviewFirst(JSON.stringify(result, null, 2));
     } catch {
-      // se não for JSON válido, apenas mostra raw
       setPreviewFirst(resp1);
     }
   }, [resp1, incluirFontes]);
@@ -189,7 +191,7 @@ export default function Home() {
     setResp2('');
 
     try {
-      // 1) Substituir placeholders A localmente
+      // 1) substituir A-placeholders localmente
       let pSysA = sysA, pUserA = userA;
       Object.entries(valsA).forEach(([k, v]) => {
         const re = new RegExp(`\\$\\{${k}\\}`, 'g');
@@ -197,11 +199,19 @@ export default function Home() {
         pUserA = pUserA.replace(re, v);
       });
 
-      // 2) Enviar para API (sysB, userB e valsB)
+      // 2) chamar API com ambos os modelos
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, sysA: pSysA, userA: pUserA, sysB, userB, valsB }),
+        body: JSON.stringify({
+          modelA,
+          modelB,
+          sysA: pSysA,
+          userA: pUserA,
+          sysB,
+          userB,
+          valsB,
+        }),
       });
       const data = (await res.json()) as RunResponse;
       if (data.error) throw new Error(data.error);
@@ -222,14 +232,18 @@ export default function Home() {
 
   const configureTab = (
     <>
-      {/* Modelo */}
+      {/* Modelo Primeira Chamada */}
       <Card className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
         <SettingRow
           bottomBorder
-          label={<Text strong>Modelo</Text>}
-          description="Escolha seu LLM"
+          label={<Text strong>Modelo – Primeira Chamada</Text>}
+          description="Escolha o LLM para a primeira requisição"
         >
-          <Select value={model} onChange={setModel} className="w-full sm:w-64">
+          <Select
+            value={modelA}
+            onChange={setModelA}
+            className="w-full sm:w-64"
+          >
             {MODELS.map(m => (
               <Option key={m} value={m}>{m}</Option>
             ))}
@@ -285,27 +299,17 @@ export default function Home() {
         </Card>
       )}
 
-      {/* Switch Incluir Fontes */}
+      {/* Switch Incluir Fontes & Preview */}
       <Card className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
         <SettingRow
           bottomBorder
-          label={<Text strong>Incluir campos &quot;source&quot;</Text>}
-          description="Quando desativado, remove todos os campos 'source' da Resposta 1"
+          label={<Text strong>Incluir campos "source"</Text>}
+          description="Desative para remover 'source' da Resposta 1"
         >
-          <Switch
-            checked={incluirFontes}
-            onChange={setIncluirFontes}
-          />
+          <Switch checked={incluirFontes} onChange={setIncluirFontes} />
         </SettingRow>
-
-        {/* Preview Dinâmico */}
         <Text strong>Pré-visualização Resposta 1:</Text>
-        <TextArea
-          rows={8}
-          value={previewFirst}
-          readOnly
-          className="border border-gray-200 rounded-md bg-gray-50 mt-2"
-        />
+        <TextArea rows={8} value={previewFirst} readOnly className="border border-gray-200 rounded-md bg-gray-50 mt-2" />
       </Card>
 
       {/* Instruções FIRST_RESPONSE */}
@@ -313,15 +317,34 @@ export default function Home() {
         message="Referenciando Primeira Resposta"
         description={
           <>
-            Digite <Text code>FIRST_RESPONSE</Text> em qualquer prompt ou
-            placeholder da <Text strong>Segunda Chamada</Text>. Campos que
-            contêm esse texto exibem um badge.
+            Digite <Text code>FIRST_RESPONSE</Text> em prompts ou
+            placeholders da <Text strong>Segunda Chamada</Text>. Campos que
+            contêm esse texto mostram um badge.
           </>
         }
         type="info"
         showIcon
         className="mb-4"
       />
+
+      {/* Modelo Segunda Chamada */}
+      <Card className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
+        <SettingRow
+          bottomBorder
+          label={<Text strong>Modelo – Segunda Chamada</Text>}
+          description="Escolha o LLM para a segunda requisição"
+        >
+          <Select
+            value={modelB}
+            onChange={setModelB}
+            className="w-full sm:w-64"
+          >
+            {MODELS.map(m => (
+              <Option key={m} value={m}>{m}</Option>
+            ))}
+          </Select>
+        </SettingRow>
+      </Card>
 
       {/* Segunda Chamada */}
       <Card title="Segunda Chamada" className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
