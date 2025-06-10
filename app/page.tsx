@@ -33,6 +33,12 @@ const MODELS = [
 ] as const;
 type ModelType = typeof MODELS[number];
 
+interface RunResponse {
+  first: string;
+  second: string;
+  error?: string;
+}
+
 function SettingRow({
   label,
   description,
