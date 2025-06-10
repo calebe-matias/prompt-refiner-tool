@@ -72,15 +72,16 @@ function SettingRow({
   );
 }
 
-// Remove recursivamente todas as chaves "source"
-function removeSources(obj: any): any {
+// Remover recursivamente todas as chaves "source"
+function removeSources(obj: unknown): unknown {
   if (Array.isArray(obj)) {
-    return obj.map(removeSources);
-  } else if (obj && typeof obj === 'object') {
-    const out: any = {};
-    for (const k in obj) {
+    return obj.map(item => removeSources(item));
+  }
+  if (obj !== null && typeof obj === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
       if (k === 'source') continue;
-      out[k] = removeSources(obj[k]);
+      out[k] = removeSources(v);
     }
     return out;
   }
@@ -288,7 +289,7 @@ export default function Home() {
       <Card className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
         <SettingRow
           bottomBorder
-          label={<Text strong>Incluir campos "source"</Text>}
+          label={<Text strong>Incluir campos &quot;source&quot;</Text>}
           description="Quando desativado, remove todos os campos 'source' da Resposta 1"
         >
           <Switch
