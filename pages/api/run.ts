@@ -34,23 +34,22 @@ export default async function handler(
     const firstRaw = await openai.chat.completions.create({
       model: modelA,
       messages: [
-        { role: 'system', content: sysA },
-        { role: 'user',   content: userA },
+        { role:'system', content:sysA },
+        { role:'user',   content:userA },
       ],
     });
     const first = firstRaw.choices[0].message.content ?? '';
 
-    // 2️⃣ Gerar prompts da segunda chamada
+    // 2️⃣ Substituir placeholders para B
     let bSys  = sysB;
     let bUser = userB;
 
-    for (const [key, val] of Object.entries(valsB)) {
+    for (const [key,val] of Object.entries(valsB)) {
       const use = val === 'FIRST_RESPONSE' ? first : val;
-      const re = new RegExp(`\\$\\{${key}\\}`, 'g');
-      bSys  = bSys.replace(re, use);
-      bUser = bUser.replace(re, use);
+      const re = new RegExp(`\\$\\{${key}\\}`,'g');
+      bSys  = bSys.replace(re,use);
+      bUser = bUser.replace(re,use);
     }
-    // bare token
     bSys  = bSys.replace(/FIRST_RESPONSE/g, first);
     bUser = bUser.replace(/FIRST_RESPONSE/g, first);
 
@@ -58,8 +57,8 @@ export default async function handler(
     const secondRaw = await openai.chat.completions.create({
       model: modelB,
       messages: [
-        { role: 'system', content: bSys },
-        { role: 'user',   content: bUser },
+        { role:'system', content:bSys },
+        { role:'user',   content:bUser },
       ],
     });
     const second = secondRaw.choices[0].message.content ?? '';

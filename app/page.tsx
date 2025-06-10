@@ -110,7 +110,7 @@ export default function Home() {
   // Switch para incluir fontes
   const [incluirFontes, setIncluirFontes] = useState(true);
 
-  // Resposta 1 processada (com ou sem fontes)
+  // Resposta 1 processada
   const [previewFirst, setPreviewFirst] = useState('');
 
   // Placeholders A
@@ -167,7 +167,6 @@ export default function Home() {
     });
   }, [phSysB, phUserB]);
 
-  // Atualiza previewFirst sempre que mudar resp1 ou incluirFontes
   useEffect(() => {
     if (!resp1) {
       setPreviewFirst('');
@@ -191,7 +190,7 @@ export default function Home() {
     setResp2('');
 
     try {
-      // 1) substituir A-placeholders localmente
+      // 1️⃣ Substituir placeholders A
       let pSysA = sysA, pUserA = userA;
       Object.entries(valsA).forEach(([k, v]) => {
         const re = new RegExp(`\\$\\{${k}\\}`, 'g');
@@ -199,10 +198,10 @@ export default function Home() {
         pUserA = pUserA.replace(re, v);
       });
 
-      // 2) chamar API com ambos os modelos
+      // 2️⃣ Chamar API com ambos os modelos
       const res = await fetch('/api/run', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {'Content-Type':'application/json'},
         body: JSON.stringify({
           modelA,
           modelB,
@@ -219,7 +218,7 @@ export default function Home() {
       setResp1(data.first);
       setResp2(data.second);
       messageApi.success(
-        `Concluído — A:${phSysA.length + phUserA.length}, B:${phSysB.length + phUserB.length}`,
+        `Concluído — A:${phSysA.length+phUserA.length}, B:${phSysB.length+phUserB.length}`,
         2
       );
       setActiveTab('results');
@@ -233,46 +232,40 @@ export default function Home() {
   const configureTab = (
     <>
       {/* Modelo Primeira Chamada */}
-      <Card className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
+      <Card className="rounded-2xl shadow-sm mb-6" style={{ background:'white' }}>
         <SettingRow
           bottomBorder
           label={<Text strong>Modelo – Primeira Chamada</Text>}
           description="Escolha o LLM para a primeira requisição"
         >
-          <Select
-            value={modelA}
-            onChange={setModelA}
-            className="w-full sm:w-64"
-          >
-            {MODELS.map(m => (
-              <Option key={m} value={m}>{m}</Option>
-            ))}
+          <Select value={modelA} onChange={setModelA} className="w-full sm:w-64">
+            {MODELS.map(m => <Option key={m} value={m}>{m}</Option>)}
           </Select>
         </SettingRow>
       </Card>
 
       {/* Primeira Chamada */}
-      <Card title="Primeira Chamada" className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
+      <Card title="Primeira Chamada" className="rounded-2xl shadow-sm mb-6" style={{ background:'white' }}>
         <SettingRow bottomBorder label="Prompt de Sistema A">
-          <TextArea rows={6} value={sysA} onChange={e => setSysA(e.target.value)} placeholder="Prompt de sistema A" />
+          <TextArea rows={6} value={sysA} onChange={e=>setSysA(e.target.value)} placeholder="Prompt de sistema A" />
         </SettingRow>
         <SettingRow label="Prompt de Usuário A">
-          <TextArea rows={6} value={userA} onChange={e => setUserA(e.target.value)} placeholder="Prompt de usuário A" />
+          <TextArea rows={6} value={userA} onChange={e=>setUserA(e.target.value)} placeholder="Prompt de usuário A" />
         </SettingRow>
       </Card>
 
-      {/* Placeholders da 1ª Chamada */}
-      {(phSysA.length || phUserA.length) > 0 && (
-        <Card title="Placeholders da Primeira Chamada" className="rounded-2xl shadow-sm mb-6" style={{ background: 'transparent' }}>
-          {phSysA.length > 0 && (
+      {/* Placeholders A */}
+      {(phSysA.length||phUserA.length)>0 && (
+        <Card title="Placeholders da Primeira Chamada" className="rounded-2xl shadow-sm mb-6" style={{ background:'transparent' }}>
+          {phSysA.length>0 && (
             <>
               <Text strong className="text-teal-500">Sistema A</Text>
-              {phSysA.map(ph => (
+              {phSysA.map(ph=>(
                 <SettingRow key={ph} bottomBorder label={`Valor para \`${ph}\``}>
                   <TextArea
                     rows={2}
                     value={valsA[ph]}
-                    onChange={e => setValsA(p => ({ ...p, [ph]: e.target.value }))}
+                    onChange={e=>setValsA(p=>({...p,[ph]:e.target.value}))}
                     placeholder={ph}
                     className="border-none bg-transparent w-full sm:w-64"
                   />
@@ -280,15 +273,15 @@ export default function Home() {
               ))}
             </>
           )}
-          {phUserA.length > 0 && (
+          {phUserA.length>0 && (
             <>
               <Text strong className="text-teal-500 mt-4">Usuário A</Text>
-              {phUserA.map(ph => (
+              {phUserA.map(ph=>(
                 <SettingRow key={ph} bottomBorder label={`Valor para \`${ph}\``}>
                   <TextArea
                     rows={2}
                     value={valsA[ph]}
-                    onChange={e => setValsA(p => ({ ...p, [ph]: e.target.value }))}
+                    onChange={e=>setValsA(p=>({...p,[ph]:e.target.value}))}
                     placeholder={ph}
                     className="border-none bg-transparent w-full sm:w-64"
                   />
@@ -299,12 +292,12 @@ export default function Home() {
         </Card>
       )}
 
-      {/* Switch Incluir Fontes & Preview */}
-      <Card className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
+      {/* Switch e Preview */}
+      <Card className="rounded-2xl shadow-sm mb-6" style={{ background:'white' }}>
         <SettingRow
           bottomBorder
-          label={<Text strong>Incluir campos "source"</Text>}
-          description="Desative para remover 'source' da Resposta 1"
+          label={<Text strong>Incluir campos &quot;source&quot;</Text>}
+          description="Desative para remover todos os campos &quot;source&quot; da Resposta 1"
         >
           <Switch checked={incluirFontes} onChange={setIncluirFontes} />
         </SettingRow>
@@ -317,9 +310,9 @@ export default function Home() {
         message="Referenciando Primeira Resposta"
         description={
           <>
-            Digite <Text code>FIRST_RESPONSE</Text> em prompts ou
-            placeholders da <Text strong>Segunda Chamada</Text>. Campos que
-            contêm esse texto mostram um badge.
+            Digite <Text code>FIRST_RESPONSE</Text> em qualquer prompt ou
+            placeholder da <Text strong>Segunda Chamada</Text>. Campos com ele
+            exibem um badge.
           </>
         }
         type="info"
@@ -328,88 +321,82 @@ export default function Home() {
       />
 
       {/* Modelo Segunda Chamada */}
-      <Card className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
+      <Card className="rounded-2xl shadow-sm mb-6" style={{ background:'white' }}>
         <SettingRow
           bottomBorder
           label={<Text strong>Modelo – Segunda Chamada</Text>}
           description="Escolha o LLM para a segunda requisição"
         >
-          <Select
-            value={modelB}
-            onChange={setModelB}
-            className="w-full sm:w-64"
-          >
-            {MODELS.map(m => (
-              <Option key={m} value={m}>{m}</Option>
-            ))}
+          <Select value={modelB} onChange={setModelB} className="w-full sm:w-64">
+            {MODELS.map(m=> <Option key={m} value={m}>{m}</Option>)}
           </Select>
         </SettingRow>
       </Card>
 
       {/* Segunda Chamada */}
-      <Card title="Segunda Chamada" className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
+      <Card title="Segunda Chamada" className="rounded-2xl shadow-sm mb-6" style={{ background:'white' }}>
         <SettingRow bottomBorder label={
           <>
             Prompt de Sistema B{' '}
             {sysB.includes('FIRST_RESPONSE') && (
-              <Badge count="FIRST_RESPONSE" style={{ backgroundColor: '#33B9B1' }} />
+              <Badge count="FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }} />
             )}
           </>
         }>
-          <TextArea rows={6} value={sysB} onChange={e => setSysB(e.target.value)} placeholder="Prompt de sistema B" />
+          <TextArea rows={6} value={sysB} onChange={e=>setSysB(e.target.value)} placeholder="Prompt de sistema B" />
         </SettingRow>
         <SettingRow label={
           <>
             Prompt de Usuário B{' '}
             {userB.includes('FIRST_RESPONSE') && (
-              <Badge count="FIRST_RESPONSE" style={{ backgroundColor: '#33B9B1' }} />
+              <Badge count="FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }} />
             )}
           </>
         } description="Digite FIRST_RESPONSE ou ${var}">
-          <TextArea rows={6} value={userB} onChange={e => setUserB(e.target.value)} placeholder="Prompt de usuário B" />
+          <TextArea rows={6} value={userB} onChange={e=>setUserB(e.target.value)} placeholder="Prompt de usuário B" />
         </SettingRow>
       </Card>
 
-      {/* Placeholders da 2ª Chamada */}
-      {(phSysB.length || phUserB.length) > 0 && (
-        <Card title="Placeholders da Segunda Chamada" className="rounded-2xl shadow-sm mb-6" style={{ background: 'transparent' }}>
-          {phSysB.length > 0 && (
+      {/* Placeholders B */}
+      {(phSysB.length||phUserB.length)>0 && (
+        <Card title="Placeholders da Segunda Chamada" className="rounded-2xl shadow-sm mb-6" style={{ background:'transparent' }}>
+          {phSysB.length>0 && (
             <>
               <Text strong className="text-teal-500">Sistema B</Text>
-              {phSysB.map(ph => (
+              {phSysB.map(ph=>(
                 <SettingRow key={ph} bottomBorder label={`Valor para \`${ph}\``}>
                   <TextArea
                     rows={2}
                     value={valsB[ph]}
-                    onChange={e => setValsB(p => ({ ...p, [ph]: e.target.value }))}
+                    onChange={e=>setValsB(p=>({...p,[ph]:e.target.value}))}
                     placeholder={ph}
                     className={`border-none bg-transparent w-full sm:w-64 ${
                       (valsB[ph] ?? '').includes('FIRST_RESPONSE') ? 'ring-2 ring-teal-500' : ''
                     }`}
                   />
                   {(valsB[ph] ?? '').includes('FIRST_RESPONSE') && (
-                    <Badge count="FIRST_RESPONSE" style={{ backgroundColor: '#33B9B1' }} />
+                    <Badge count="FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }} />
                   )}
                 </SettingRow>
               ))}
             </>
           )}
-          {phUserB.length > 0 && (
+          {phUserB.length>0 && (
             <>
               <Text strong className="text-teal-500 mt-4">Usuário B</Text>
-              {phUserB.map(ph => (
+              {phUserB.map(ph=>(
                 <SettingRow key={ph} bottomBorder label={`Valor para \`${ph}\``}>
                   <TextArea
                     rows={2}
                     value={valsB[ph]}
-                    onChange={e => setValsB(p => ({ ...p, [ph]: e.target.value }))}
+                    onChange={e=>setValsB(p=>({...p,[ph]:e.target.value}))}
                     placeholder={ph}
                     className={`border-none bg-transparent w-full sm:w-64 ${
                       (valsB[ph] ?? '').includes('FIRST_RESPONSE') ? 'ring-2 ring-teal-500' : ''
                     }`}
                   />
                   {(valsB[ph] ?? '').includes('FIRST_RESPONSE') && (
-                    <Badge count="FIRST_RESPONSE" style={{ backgroundColor: '#33B9B1' }} />
+                    <Badge count="FIRST_RESPONSE" style={{ backgroundColor:'#33B9B1' }} />
                   )}
                 </SettingRow>
               ))}
@@ -428,7 +415,7 @@ export default function Home() {
           onClick={runChain}
           loading={loading}
           className="rounded-full mt-4"
-          style={{ background: '#33B9B1', border: 'none' }}
+          style={{ background:'#33B9B1', border:'none' }}
         >
           Executar Fluxo
         </Button>
@@ -437,7 +424,7 @@ export default function Home() {
   );
 
   const resultsTab = (
-    <Card title="Resultados" className="rounded-2xl shadow-sm my-6" style={{ background: 'white' }}>
+    <Card title="Resultados" className="rounded-2xl shadow-sm my-6" style={{ background:'white' }}>
       <Divider />
       <div className="flex gap-4">
         <TextArea rows={15} value={resp1} readOnly className="w-1/2 border-none bg-transparent" />
@@ -447,7 +434,7 @@ export default function Home() {
   );
 
   return (
-    <ConfigProvider theme={{ token: { colorPrimary: '#33B9B1' } }}>
+    <ConfigProvider theme={{ token: { colorPrimary:'#33B9B1' } }}>
       {contextHolder}
       <Layout className="min-h-screen bg-white">
         <Header className="bg-white shadow-sm px-6 flex items-center" style={{ backgroundColor: 'white' }}>
