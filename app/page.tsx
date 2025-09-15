@@ -24,7 +24,13 @@ const { TextArea } = Input;
 const { Title, Text } = Typography;
 const { Option } = Select;
 
-const MODELS = ['gpt-4.1-nano', 'gpt-4.1-mini', 'gpt-4.1', 'o3-mini', 'gpt-5'] as const;
+const MODELS = [
+  'gpt-4.1-nano',
+  'gpt-4.1-mini',
+  'gpt-4.1',
+  'o3-mini',
+  'gpt-5',
+] as const;
 type ModelType = typeof MODELS[number];
 type Gpt5Effort = 'minimal' | 'low' | 'medium' | 'high';
 
@@ -39,10 +45,7 @@ interface RunResponse {
 }
 
 function SettingRow({
-  label,
-  description,
-  children,
-  bottomBorder = false,
+  label, description, children, bottomBorder = false,
 }: {
   label: React.ReactNode;
   description?: React.ReactNode;
@@ -61,11 +64,14 @@ function SettingRow({
         <div className="text-sm font-medium mb-1 text-gray-800">{label}</div>
         {description && <div className="text-xs text-gray-500">{description}</div>}
       </div>
-      <div className="flex justify-start md:justify-end items-center gap-2">{children}</div>
+      <div className="flex justify-start md:justify-end items-center gap-2">
+        {children}
+      </div>
     </div>
   );
 }
 
+// remove all "source" keys recursively
 function removeSources(obj: unknown): unknown {
   if (Array.isArray(obj)) return obj.map(removeSources);
   if (obj && typeof obj === 'object') {
@@ -85,45 +91,50 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'config' | 'results'>('config');
   const [messageApi, contextHolder] = message.useMessage();
 
+  // models
   const [modelA, setModelA] = useState<ModelType>(MODELS[0]);
   const [modelB, setModelB] = useState<ModelType>(MODELS[0]);
   const [gpt5EffortA, setGpt5EffortA] = useState<Gpt5Effort>('medium');
   const [gpt5EffortB, setGpt5EffortB] = useState<Gpt5Effort>('medium');
 
+  // prompts
   const [sysA, setSysA] = useState('');
   const [userA, setUserA] = useState('');
   const [sysB, setSysB] = useState('');
   const [userB, setUserB] = useState('');
 
+  // explicit schema field
   const [schemaName, setSchemaName] = useState('ClinicalJSON');
   const [schemaText, setSchemaText] = useState('');
   const [schemaIssues, setSchemaIssues] = useState<Issue[]>([]);
   const [schemaIsValid, setSchemaIsValid] = useState<boolean | null>(null);
 
+  // outputs
   const [resp1, setResp1] = useState('');
   const [resp2, setResp2] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // sources toggle
   const [incluirFontes, setIncluirFontes] = useState(true);
   const [previewFirst, setPreviewFirst] = useState('');
 
+  // server/API alerts
   const [alerts, setAlerts] = useState<Array<{ type: 'error' | 'warning' | 'info' | 'success'; title: string; description?: string }>>([]);
 
+  // placeholders A
   const [phSysA, setPhSysA] = useState<string[]>([]);
   const [phUserA, setPhUserA] = useState<string[]>([]);
   const [valsA, setValsA] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    const rx = /\$\{([^}]+)\}/g,
-      out = new Set<string>();
+    const rx = /\$\{([^}]+)\}/g, out = new Set<string>();
     let m: RegExpExecArray | null;
     while ((m = rx.exec(sysA))) out.add(m[1]);
     setPhSysA([...out]);
   }, [sysA]);
 
   useEffect(() => {
-    const rx = /\$\{([^}]+)\}/g,
-      out = new Set<string>();
+    const rx = /\$\{([^}]+)\}/g, out = new Set<string>();
     let m: RegExpExecArray | null;
     while ((m = rx.exec(userA))) out.add(m[1]);
     setPhUserA([...out]);
@@ -137,21 +148,20 @@ export default function Home() {
     });
   }, [phSysA, phUserA]);
 
+  // placeholders B
   const [phSysB, setPhSysB] = useState<string[]>([]);
   const [phUserB, setPhUserB] = useState<string[]>([]);
   const [valsB, setValsB] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    const rx = /\$\{([^}]+)\}/g,
-      out = new Set<string>();
+    const rx = /\$\{([^}]+)\}/g, out = new Set<string>();
     let m: RegExpExecArray | null;
     while ((m = rx.exec(sysB))) out.add(m[1]);
     setPhSysB([...out]);
   }, [sysB]);
 
   useEffect(() => {
-    const rx = /\$\{([^}]+)\}/g,
-      out = new Set<string>();
+    const rx = /\$\{([^}]+)\}/g, out = new Set<string>();
     let m: RegExpExecArray | null;
     while ((m = rx.exec(userB))) out.add(m[1]);
     setPhUserB([...out]);
@@ -166,10 +176,7 @@ export default function Home() {
   }, [phSysB, phUserB]);
 
   useEffect(() => {
-    if (!resp1) {
-      setPreviewFirst('');
-      return;
-    }
+    if (!resp1) { setPreviewFirst(''); return; }
     try {
       const obj = JSON.parse(resp1);
       const result = incluirFontes ? obj : removeSources(obj);
@@ -179,52 +186,44 @@ export default function Home() {
     }
   }, [resp1, incluirFontes]);
 
-  // live server-side validation (mirrors API)
+  // live schema validation (server mirrors)
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!schemaText.trim()) {
-        if (!cancelled) {
-          setSchemaIssues([]);
-          setSchemaIsValid(null);
-        }
+        setSchemaIssues([]);
+        setSchemaIsValid(null);
         return;
       }
       try {
-        JSON.parse(schemaText);
+        const res = await fetch('/api/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Validate-Schema-Only': '1' },
+          body: JSON.stringify({ schemaText }),
+        });
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok) {
+          setSchemaIssues(data.issues ?? [{ title: 'Schema inválido', detail: data.error }]);
+          setSchemaIsValid(false);
+        } else {
+          setSchemaIssues([]);
+          setSchemaIsValid(true);
+        }
       } catch (e) {
         if (!cancelled) {
           setSchemaIssues([{ title: 'JSON inválido', detail: e instanceof Error ? e.message : String(e) }]);
           setSchemaIsValid(false);
         }
-        return;
-      }
-
-      const res = await fetch('/api/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Validate-Schema-Only': '1' },
-        body: JSON.stringify({ schemaText }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setSchemaIssues(data.issues ?? [{ title: 'Schema inválido', detail: data.error }]);
-        setSchemaIsValid(false);
-      } else {
-        setSchemaIssues([]);
-        setSchemaIsValid(true);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [schemaText]);
 
   function addAlert(a: { type: 'error' | 'warning' | 'info' | 'success'; title: string; description?: string }) {
     setAlerts(prev => [...prev, a]);
   }
-  function clearAlerts() {
-    setAlerts([]);
-  }
+  function clearAlerts() { setAlerts([]); }
 
   async function runChain() {
     if (!sysA.trim() && !userA.trim()) {
@@ -236,8 +235,8 @@ export default function Home() {
     clearAlerts();
 
     try {
-      let pSysA = sysA,
-        pUserA = userA;
+      // substitute placeholders A
+      let pSysA = sysA, pUserA = userA;
       Object.entries(valsA).forEach(([k, v]) => {
         const re = new RegExp(`\\$\\{${k}\\}`, 'g');
         pSysA = pSysA.replace(re, v);
@@ -248,17 +247,9 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          modelA,
-          modelB,
-          gpt5EffortA,
-          gpt5EffortB,
-          sysA: pSysA,
-          userA: pUserA,
-          sysB,
-          userB,
-          valsB,
-          schemaName,
-          schemaText,
+          modelA, modelB, gpt5EffortA, gpt5EffortB,
+          sysA: pSysA, userA: pUserA, sysB, userB, valsB,
+          schemaName, schemaText,
         }),
       });
 
@@ -266,7 +257,6 @@ export default function Home() {
         const text = await res.text();
         throw new Error(`API ${res.status} ${res.statusText}. Body (first 300): ${text.slice(0, 300)}`);
       }
-
       const ct = res.headers.get('content-type') || '';
       if (!ct.includes('application/json')) {
         const text = await res.text();
@@ -299,15 +289,16 @@ export default function Home() {
 
   const configureTab = (
     <>
+      {/* Model A */}
       <Card className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
-        <SettingRow bottomBorder label={<Text strong>Modelo – Primeira Chamada</Text>} description="Escolha o LLM para a primeira requisição">
+        <SettingRow
+          bottomBorder
+          label={<Text strong>Modelo – Primeira Chamada</Text>}
+          description="Escolha o LLM para a primeira requisição"
+        >
           <div className="flex gap-2 items-center">
             <Select value={modelA} onChange={setModelA} className="w-56">
-              {MODELS.map(m => (
-                <Option key={m} value={m}>
-                  {m}
-                </Option>
-              ))}
+              {MODELS.map(m => <Option key={m} value={m}>{m}</Option>)}
             </Select>
             {modelA === 'gpt-5' && (
               <Tooltip title="Controla o esforço de raciocínio do GPT-5. 'minimal' pode reduzir a latência.">
@@ -323,6 +314,7 @@ export default function Home() {
         </SettingRow>
       </Card>
 
+      {/* First call */}
       <Card title="Primeira Chamada" className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
         <SettingRow bottomBorder label="Prompt de Sistema A">
           <TextArea rows={6} value={sysA} onChange={e => setSysA(e.target.value)} placeholder="Prompt de sistema A" />
@@ -332,13 +324,14 @@ export default function Home() {
         </SettingRow>
       </Card>
 
+      {/* Structured Outputs schema */}
       <Card title="Structured Outputs (opcional) – Primeira Chamada" className="rounded-2xl shadow-sm mb-6" style={{ background: 'white' }}>
         <SettingRow bottomBorder label="Nome do Schema" description="Apenas um rótulo para a chamada de API.">
           <Input value={schemaName} onChange={e => setSchemaName(e.target.value)} className="w-full sm:w-64" />
         </SettingRow>
         <SettingRow
           label="Schema JSON"
-          description="Cole aqui um JSON Schema compatível (subconjunto suportado: objetos com additionalProperties:false; required para todos; profundidade ≤ 5; ≤100 props; root sem anyOf)."
+          description="Cole aqui um JSON Schema compatível com Structured Outputs."
         >
           <TextArea
             rows={10}
