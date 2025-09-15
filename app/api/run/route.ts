@@ -3,7 +3,7 @@ import OpenAI, { APIError } from 'openai';
 import { validateSchema } from '../../../lib/so-validate';
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY, // set on Vercel
+  apiKey: process.env.OPENAI_API_KEY ?? process.env.OPENAI_API_KEY,
 });
 
 type Success = {
@@ -13,7 +13,6 @@ type Success = {
   schemaName?: string;
   requestId?: string;
 };
-type ErrorData = { error: string; issues?: Array<{ title: string; detail?: string }>; requestId?: string };
 
 interface RunRequest {
   modelA?: string;
@@ -29,27 +28,50 @@ interface RunRequest {
   schemaText?: string;
 }
 
-/** Robust extractor for Responses API */
-function extractOutputText(resp: any): string {
-  if (typeof resp?.output_text === 'string' && resp.output_text.length) return resp.output_text;
-  // Fallback: concatenate any text parts under output -> content
-  try {
-    const parts: string[] = [];
-    const output = resp?.output ?? [];
-    for (const item of output) {
-      const content = item?.content ?? [];
-      for (const c of content) {
-        if (typeof c?.text?.value === 'string') parts.push(c.text.value);
-        else if (typeof c?.text === 'string') parts.push(c.text);
-        else if (typeof c?.content === 'string') parts.push(c.content);
-      }
-    }
-    if (parts.length) return parts.join('');
-  } catch {}
-  return JSON.stringify(resp ?? {}, null, 2);
+/** Minimal shape we read from Responses API objects */
+interface ResponseTextPart {
+  text?: { value?: string } | string;
+  content?: string;
+}
+interface ResponseOutputItem {
+  content?: ResponseTextPart[];
+}
+interface ResponsesCreateResult {
+  output_text?: string;
+  output?: ResponseOutputItem[];
+  _request_id?: string;
 }
 
-function looksLikeJSON(s: string) {
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null;
+}
+
+/** Robust extractor for Responses API (no `any`) */
+function extractOutputText(resp: unknown): string {
+  if (isRecord(resp)) {
+    const s = resp.output_text;
+    if (typeof s === 'string' && s.length) return s;
+
+    const output = resp.output;
+    if (Array.isArray(output)) {
+      const parts: string[] = [];
+      for (const item of output as ResponseOutputItem[]) {
+        const content = item?.content;
+        if (Array.isArray(content)) {
+          for (const c of content) {
+            if (isRecord(c?.text) && typeof c.text.value === 'string') parts.push(c.text.value);
+            else if (typeof c?.text === 'string') parts.push(c.text);
+            else if (typeof c?.content === 'string') parts.push(c.content);
+          }
+        }
+      }
+      if (parts.length) return parts.join('');
+    }
+  }
+  return JSON.stringify(resp, null, 2);
+}
+
+function looksLikeJSON(s: string): boolean {
   const t = s.trim();
   if (!t) return false;
   if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
@@ -67,7 +89,8 @@ export async function POST(req: Request) {
     try {
       const schemaText = body.schemaText ?? '';
       if (!schemaText.trim()) return NextResponse.json({ ok: true }, { status: 200 });
-      let parsed: any;
+
+      let parsed: unknown;
       try {
         parsed = JSON.parse(schemaText);
       } catch (e) {
@@ -96,12 +119,12 @@ export async function POST(req: Request) {
     valsB = {},
     schemaName = 'ClinicalJSON',
     schemaText = '',
-  } = body as RunRequest;
+  } = body;
 
   try {
     // 1) parse/validate schema if provided
     let useStructured = false;
-    let parsedSchema: any | undefined;
+    let parsedSchema: unknown;
     if (schemaText.trim()) {
       try {
         parsedSchema = JSON.parse(schemaText);
@@ -119,7 +142,7 @@ export async function POST(req: Request) {
     }
 
     // 2) First call — Responses API (with optional structured outputs)
-    const reqA: any = {
+    const reqA: Record<string, unknown> = {
       model: modelA,
       instructions: sysA,
       input: userA,
@@ -130,7 +153,8 @@ export async function POST(req: Request) {
     }
 
     if (useStructured) {
-      // Per Responses API, text formatting lives under text.format
+      // In Responses API, JSON formatting is under text.format (not response_format)
+      // Docs also mention the convenience `response.output_text` to read text. 
       reqA.text = {
         format: {
           type: 'json_schema',
@@ -141,7 +165,7 @@ export async function POST(req: Request) {
       };
     }
 
-    const firstRaw = await openai.responses.create(reqA);
+    const firstRaw = (await openai.responses.create(reqA)) as ResponsesCreateResult;
     const first = extractOutputText(firstRaw);
 
     // Prepare a JSON-friendly injected block
@@ -160,7 +184,7 @@ export async function POST(req: Request) {
     bSys = bSys.replace(/FIRST_RESPONSE/g, injected);
     bUser = bUser.replace(/FIRST_RESPONSE/g, injected);
 
-    // ✅ Safety net: if dev forgot to place FIRST_RESPONSE anywhere, still deliver the JSON
+    // Safety net: if FIRST_RESPONSE wasn't referenced anywhere, still append JSON
     const stillMissing = !/\bFIRST_RESPONSE\b/.test(sysB + userB) &&
                          Object.values(valsB).every(v => v !== 'FIRST_RESPONSE');
     if (stillMissing) {
@@ -168,7 +192,7 @@ export async function POST(req: Request) {
     }
 
     // 4) Second call — free text
-    const reqB: any = {
+    const reqB: Record<string, unknown> = {
       model: modelB,
       instructions: bSys,
       input: bUser,
@@ -176,8 +200,8 @@ export async function POST(req: Request) {
     if (modelB === 'gpt-5') {
       reqB.reasoning = { effort: gpt5EffortB };
     }
-    console.log('reqB bUser', bUser);
-    const secondRaw = await openai.responses.create(reqB);
+
+    const secondRaw = (await openai.responses.create(reqB)) as ResponsesCreateResult;
     const second = extractOutputText(secondRaw);
 
     const payload: Success = {
@@ -185,16 +209,17 @@ export async function POST(req: Request) {
       second,
       structured: useStructured,
       schemaName: useStructured ? (schemaName || 'ClinicalJSON') : undefined,
-      requestId: (firstRaw as any)?._request_id,
+      requestId: firstRaw?._request_id,
     };
     return NextResponse.json(payload, { status: 200 });
-  } catch (err: any) {
-    let requestId: string | undefined;
+  } catch (err) {
     const issues: Array<{ title: string; detail?: string }> = [];
+    let requestId: string | undefined;
 
     if (err instanceof APIError) {
-      requestId = (err as any).response?.headers?.get?.('x-request-id');
-      const msg = (err as any).error?.message || err.message || 'Erro desconhecido';
+      // APIError is the typed error from the official SDK. 
+      const msg = (err as APIError).error?.message ?? err.message ?? 'Erro desconhecido';
+      requestId = (err as APIError).headers?.get?.('x-request-id') ?? undefined;
 
       if (/response_format/i.test(msg)) {
         issues.push({
@@ -212,6 +237,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: msg, requestId, issues: issues.length ? issues : undefined }, { status: err.status ?? 500 });
     }
 
-    return NextResponse.json({ error: err?.message || 'Erro desconhecido' }, { status: 500 });
+    const msg = err instanceof Error ? err.message : 'Erro desconhecido';
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
