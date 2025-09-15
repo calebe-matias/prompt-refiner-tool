@@ -32,7 +32,7 @@ const MODELS = [
   'gpt-5',
 ] as const;
 type ModelType = typeof MODELS[number];
-type Gpt5Effort = 'minimal' | 'low' | 'medium' | 'high';
+type Gpt5Effort = 'low' | 'medium' | 'high';
 
 interface RunResponse {
   first: string;
@@ -301,9 +301,8 @@ export default function Home() {
               {MODELS.map(m => <Option key={m} value={m}>{m}</Option>)}
             </Select>
             {modelA === 'gpt-5' && (
-              <Tooltip title="Controla o esforço de raciocínio do GPT-5. 'minimal' pode reduzir a latência.">
+              <Tooltip title="Controla o esforço de raciocínio do GPT-5 (low/medium/high).">
                 <Select<Gpt5Effort> value={gpt5EffortA} onChange={setGpt5EffortA} className="w-48">
-                  <Option value="minimal">minimal</Option>
                   <Option value="low">low</Option>
                   <Option value="medium">medium</Option>
                   <Option value="high">high</Option>
@@ -417,7 +416,6 @@ export default function Home() {
             {modelB === 'gpt-5' && (
               <Tooltip title="Controla o esforço de raciocínio do GPT-5.">
                 <Select<Gpt5Effort> value={gpt5EffortB} onChange={setGpt5EffortB} className="w-48">
-                  <Option value="minimal">minimal</Option>
                   <Option value="low">low</Option>
                   <Option value="medium">medium</Option>
                   <Option value="high">high</Option>
@@ -531,3 +529,4 @@ export default function Home() {
     </ConfigProvider>
   );
 }
+  

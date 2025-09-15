@@ -1,10 +1,10 @@
-// app/api/run/route.ts
+// /app/api/run/route.ts
 import { NextResponse } from 'next/server';
 import OpenAI, { APIError } from 'openai';
-import { validateSchema } from '@/lib/so-validate';
+import { validateSchema, type Issue } from '../../../lib/so-validate';
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY, // set in Vercel project settings
 });
 
 type Success = {
@@ -14,13 +14,18 @@ type Success = {
   schemaName?: string;
   requestId?: string;
 };
-type ErrorItem = { title: string; detail?: string };
+
+type ErrorJson = {
+  error: string;
+  issues?: Array<{ title: string; detail?: string }>;
+  requestId?: string;
+};
 
 interface RunRequest {
   modelA?: string;
   modelB?: string;
-  gpt5EffortA?: 'minimal' | 'low' | 'medium' | 'high';
-  gpt5EffortB?: 'minimal' | 'low' | 'medium' | 'high';
+  gpt5EffortA?: 'low' | 'medium' | 'high';
+  gpt5EffortB?: 'low' | 'medium' | 'high';
   sysA?: string;
   userA?: string;
   sysB?: string;
@@ -30,76 +35,54 @@ interface RunRequest {
   schemaText?: string;
 }
 
-/** Prefer parsed JSON from Responses API, fall back to output_text */
-function pickOutput(resp: any): { text: string; json?: unknown } {
-  try {
-    // Prefer parsed value if Structured Outputs was used
-    const outputs: any[] = Array.isArray(resp?.output) ? resp.output : [];
-    for (const item of outputs) {
-      const content: any[] = Array.isArray(item?.content) ? item.content : [];
-      for (const c of content) {
-        if (c && typeof c === 'object' && 'parsed' in c) {
-          return { text: JSON.stringify(c.parsed, null, 2), json: c.parsed };
-        }
-        if (c?.type === 'output_text' && typeof c.text === 'string') {
-          // keep going in case a later entry has parsed, but remember text
-          const txt = c.text as string;
-          // If it also looks like raw JSON, try to parse to be safe
-          try {
-            const maybe = JSON.parse(txt);
-            return { text: JSON.stringify(maybe, null, 2), json: maybe };
-          } catch {
-            return { text: txt };
-          }
-        }
-      }
-    }
-    if (typeof resp?.output_text === 'string') {
-      const txt = resp.output_text as string;
-      try {
-        const maybe = JSON.parse(txt);
-        return { text: JSON.stringify(maybe, null, 2), json: maybe };
-      } catch {
-        return { text: txt };
-      }
-    }
-  } catch {
-    /* ignore and fall through */
-  }
-  return { text: '' };
+type Resp = OpenAI.Responses.Response;
+type CreateParams = OpenAI.Responses.ResponseCreateParamsNonStreaming;
+
+function extractOutputText(resp: Resp): string {
+  return typeof resp.output_text === 'string' ? resp.output_text : JSON.stringify(resp, null, 2);
+}
+
+// Backcompat: if some client still sends "minimal", coerce to "low"
+function normalizeEffort(
+  e?: string
+): 'low' | 'medium' | 'high' | undefined {
+  if (e === 'minimal') return 'low';
+  if (e === 'low' || e === 'medium' || e === 'high') return e;
+  return undefined;
 }
 
 export async function POST(req: Request) {
   const validateOnly = req.headers.get('X-Validate-Schema-Only') === '1';
   const body = (await req.json()) as Partial<RunRequest>;
 
-  // Live schema validation route (no model calls)
+  // Live validation mode for the client
   if (validateOnly) {
     try {
       const schemaText = body.schemaText ?? '';
-      if (!schemaText.trim()) {
-        return NextResponse.json({ ok: true }, { status: 200 });
-      }
-      let parsed: Record<string, unknown>;
+      if (!schemaText.trim()) return NextResponse.json({ ok: true }, { status: 200 });
+
+      let parsed: unknown;
       try {
         parsed = JSON.parse(schemaText);
       } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
         return NextResponse.json(
-          {
-            error: 'Schema JSON inválido',
-            issues: [{ title: 'Falha ao analisar JSON', detail: e instanceof Error ? e.message : String(e) }],
-          },
+          { error: 'Schema JSON inválido', issues: [{ title: 'Falha ao analisar JSON', detail }] } satisfies ErrorJson,
           { status: 400 }
         );
       }
+
       const problems = validateSchema(parsed);
       if (problems.length) {
-        return NextResponse.json({ error: 'Schema inválido', issues: problems }, { status: 400 });
+        return NextResponse.json(
+          { error: 'Schema inválido', issues: problems } satisfies ErrorJson,
+          { status: 400 }
+        );
       }
       return NextResponse.json({ ok: true }, { status: 200 });
     } catch (e) {
       return NextResponse.json(
-        { error: e instanceof Error ? e.message : String(e) },
+        { error: e instanceof Error ? e.message : String(e) } satisfies ErrorJson,
         { status: 400 }
       );
     }
@@ -122,45 +105,41 @@ export async function POST(req: Request) {
   try {
     // Parse & validate schema if provided
     let useStructured = false;
-    let parsedSchema: Record<string, unknown> | undefined;
+    let parsedSchema: unknown;
     if (schemaText.trim()) {
       try {
         parsedSchema = JSON.parse(schemaText);
       } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
         return NextResponse.json(
-          {
-            error: 'Schema JSON inválido',
-            issues: [{ title: 'Falha ao analisar JSON', detail: e instanceof Error ? e.message : String(e) }],
-          },
+          { error: 'Schema JSON inválido', issues: [{ title: 'Falha ao analisar JSON', detail }] } satisfies ErrorJson,
           { status: 400 }
         );
       }
       const problems = validateSchema(parsedSchema);
       if (problems.length) {
         return NextResponse.json(
-          { error: 'Schema inválido para Structured Outputs', issues: problems },
+          { error: 'Schema inválido para Structured Outputs', issues: problems } satisfies ErrorJson,
           { status: 400 }
         );
       }
       useStructured = true;
     }
 
-    // -------- First call (Responses API) --------
-    // Build param object loosely; cast only at call site to dodge SDK type skew (e.g. 'minimal')
-    const reqA: Record<string, unknown> = {
+    // 1) First call — Responses API (non-streaming)
+    const effortA = normalizeEffort(gpt5EffortA);
+    const reqA: CreateParams = {
       model: modelA,
       input: userA,
       instructions: sysA,
-      ...(modelA === 'gpt-5'
-        ? { reasoning: { effort: gpt5EffortA as unknown as string } }
-        : {}),
+      ...(modelA === 'gpt-5' && effortA ? { reasoning: { effort: effortA } } : {}),
       ...(useStructured
         ? {
             text: {
               format: {
                 type: 'json_schema',
                 name: schemaName || 'ClinicalJSON',
-                schema: parsedSchema!,
+                schema: parsedSchema as Record<string, unknown>,
                 strict: true,
               },
             },
@@ -168,87 +147,70 @@ export async function POST(req: Request) {
         : {}),
     };
 
-    // Cast to any to satisfy older SDK TypeScript defs while still sending correct runtime shape
-    const firstRaw = await openai.responses.create(reqA as any);
-    const { text: firstText, json: firstJSON } = pickOutput(firstRaw);
-    const first = firstJSON ? JSON.stringify(firstJSON, null, 2) : firstText;
+    const firstRaw = await openai.responses.create(reqA);
+    const requestId = (firstRaw as unknown as { _request_id?: string })._request_id;
+    const first = extractOutputText(firstRaw);
 
-    // -------- Inject FIRST_RESPONSE as explicit JSON block for your template --------
-    // If we have a parsed object, that’s guaranteed JSON; else try to parse text.
-    const parsedFromText = (() => {
-      if (firstJSON) return firstJSON;
-      try {
-        return JSON.parse(firstText);
-      } catch {
-        return null;
-      }
-    })();
+    // Prepare a JSON-friendly injected block (don’t wrap in code fences)
+    const injectedFirst = first;
 
-    const injectedJSONBlock =
-      parsedFromText != null
-        ? `\n\n# DADOS CLÍNICOS (JSON)\n${JSON.stringify(parsedFromText, null, 2)}\n`
-        : firstText || '\n\n# DADOS CLÍNICOS (JSON)\n{}\n';
-
-    // -------- Prepare second prompts with placeholders + FIRST_RESPONSE --------
+    // 2) Substitute into B (both placeholders and literal FIRST_RESPONSE)
     let bSys = sysB;
     let bUser = userB;
 
-    // Replace ${var} placeholder values (including ones set to FIRST_RESPONSE)
     for (const [key, val] of Object.entries(valsB)) {
+      const use = val === 'FIRST_RESPONSE' ? injectedFirst : val;
       const re = new RegExp(`\\$\\{${key}\\}`, 'g');
-      const replacement = val === 'FIRST_RESPONSE' ? injectedJSONBlock : val;
-      bSys = bSys.replace(re, replacement);
-      bUser = bUser.replace(re, replacement);
+      bSys = bSys.replace(re, use);
+      bUser = bUser.replace(re, use);
     }
-    // Replace raw FIRST_RESPONSE tokens
-    bSys = bSys.replace(/FIRST_RESPONSE/g, injectedJSONBlock);
-    bUser = bUser.replace(/FIRST_RESPONSE/g, injectedJSONBlock);
+    bSys = bSys.replace(/FIRST_RESPONSE/g, injectedFirst);
+    bUser = bUser.replace(/FIRST_RESPONSE/g, injectedFirst);
 
-    // -------- Second call (free text) --------
-    const reqB: Record<string, unknown> = {
+    // 3) Second call — free text
+    const effortB = normalizeEffort(gpt5EffortB);
+    const reqB: CreateParams = {
       model: modelB,
       input: bUser,
       instructions: bSys,
-      ...(modelB === 'gpt-5'
-        ? { reasoning: { effort: gpt5EffortB as unknown as string } }
-        : {}),
+      ...(modelB === 'gpt-5' && effortB ? { reasoning: { effort: effortB } } : {}),
     };
 
-    const secondRaw = await openai.responses.create(reqB as any);
-    const { text: second } = pickOutput(secondRaw);
+    const secondRaw = await openai.responses.create(reqB);
+    const second = extractOutputText(secondRaw);
 
-    const payload: Success = {
+    const ok: Success = {
       first,
       second,
       structured: useStructured,
       schemaName: useStructured ? schemaName || 'ClinicalJSON' : undefined,
-      requestId: (firstRaw as any)?._request_id,
+      requestId,
     };
-    return NextResponse.json(payload, { status: 200 });
+    return NextResponse.json(ok, { status: 200 });
   } catch (err) {
-    const issues: ErrorItem[] = [];
+    const issues: Issue[] = [];
     let requestId: string | undefined;
 
     if (err instanceof APIError) {
-      requestId = (err as any).response?.headers?.get?.('x-request-id');
-      const msg = (err as any).error?.message || err.message || 'Erro desconhecido';
+      requestId = (err as unknown as { response?: { headers?: Map<string, string> | { get(k: string): string } } }).response?.headers?.get?.('x-request-id');
+      const msg = (err as unknown as { error?: { message?: string } }).error?.message || err.message || 'Erro desconhecido';
 
       if (/response_format/i.test(msg)) {
-        issues.push({
-          title: 'Parâmetro migrado',
-          detail: "No Responses API, 'response_format' virou 'text.format'.",
-        });
+        issues.push({ title: 'Parâmetro migrado', detail: "No Responses API, 'response_format' foi movido para 'text.format'." });
       }
       if (/json_schema|text\.format/i.test(msg)) {
         issues.push({
           title: 'Erro de Structured Outputs',
           detail:
-            'Use apenas o subconjunto suportado: objetos com "additionalProperties": false; todos os campos listados em "required"; profundidade ≤ 5; ≤ 100 propriedades; sem anyOf na raiz.',
+            'Confirme que o schema usa apenas o subconjunto suportado (objetos com additionalProperties:false; todos em "required"; profundidade ≤ 5; ≤ 100 propriedades; root sem anyOf).',
         });
       }
-      return NextResponse.json({ error: msg, requestId, issues: issues.length ? issues : undefined }, { status: err.status ?? 500 });
+
+      return NextResponse.json({ error: msg, requestId, issues: issues.length ? issues : undefined } satisfies ErrorJson, {
+        status: err.status ?? 500,
+      });
     }
 
-    return NextResponse.json({ error: (err as Error)?.message ?? 'Erro desconhecido' }, { status: 500 });
+    return NextResponse.json({ error: (err as Error)?.message ?? 'Erro desconhecido' } satisfies ErrorJson, { status: 500 });
   }
 }
