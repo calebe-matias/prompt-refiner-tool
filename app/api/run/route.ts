@@ -24,8 +24,8 @@ type ErrorJson = {
 interface RunRequest {
   modelA?: string;
   modelB?: string;
-  gpt5EffortA?: 'low' | 'medium' | 'high';
-  gpt5EffortB?: 'low' | 'medium' | 'high';
+  gpt5EffortA?: 'minimal' | 'low' | 'medium' | 'high';
+  gpt5EffortB?: 'minimal' | 'low' | 'medium' | 'high';
   sysA?: string;
   userA?: string;
   sysB?: string;
@@ -42,12 +42,10 @@ function extractOutputText(resp: Resp): string {
   return typeof resp.output_text === 'string' ? resp.output_text : JSON.stringify(resp, null, 2);
 }
 
-// Backcompat: if some client still sends "minimal", coerce to "low"
 function normalizeEffort(
   e?: string
-): 'low' | 'medium' | 'high' | undefined {
-  if (e === 'minimal') return 'low';
-  if (e === 'low' || e === 'medium' || e === 'high') return e;
+): 'minimal' | 'low' | 'medium' | 'high' | undefined {
+  if (e === 'minimal' || e === 'low' || e === 'medium' || e === 'high') return e;
   return undefined;
 }
 

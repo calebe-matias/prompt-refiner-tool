@@ -32,7 +32,7 @@ const MODELS = [
   'gpt-5',
 ] as const;
 type ModelType = typeof MODELS[number];
-type Gpt5Effort = 'low' | 'medium' | 'high';
+type Gpt5Effort = 'minimal' | 'low' | 'medium' | 'high';
 
 interface RunResponse {
   first: string;
@@ -529,4 +529,3 @@ export default function Home() {
     </ConfigProvider>
   );
 }
-  
