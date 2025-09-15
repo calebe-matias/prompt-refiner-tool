@@ -1,26 +1,19 @@
-// ONLY the Structured Outputs rules publicly documented by OpenAI are enforced here.
-// Subset: depth ≤ 5, ≤ 100 total object properties, object nodes require
-// additionalProperties:false, every defined property listed in "required",
-// no root anyOf, allow nested anyOf, support $defs and $ref without expanding.
+// /lib/so-validate.ts
+// Client/server-safe validator that reflects the Structured Outputs subset
+// Only uses rules documented publicly (depth ≤ 5, ≤ 100 props total,
+// objects require additionalProperties:false and every property listed in required,
+// root cannot be anyOf; types limited; some keywords unsupported).
 
 export type Issue = { title: string; detail?: string };
 
-type JSONSchemaType = 'string' | 'number' | 'integer' | 'boolean' | 'object' | 'array' | 'null';
-
-export interface JSONSchema {
-  type?: JSONSchemaType | JSONSchemaType[];
-  properties?: Record<string, JSONSchema>;
-  required?: string[];
-  additionalProperties?: boolean;
-  items?: JSONSchema;
-  anyOf?: JSONSchema[];
-  $defs?: Record<string, JSONSchema>;
-  $ref?: string;
-  [key: string]: unknown;
-}
-
-const SUPPORTED_TYPES = new Set<Exclude<JSONSchemaType, 'null'>>([
-  'string', 'number', 'integer', 'boolean', 'object', 'array',
+const SUPPORTED_TYPES = new Set([
+  'string',
+  'number',
+  'integer',
+  'boolean',
+  'object',
+  'array',
+  // union supports 'null' only inside a union array in "type"
 ]);
 
 const UNSUPPORTED: Record<string, string[]> = {
@@ -32,7 +25,7 @@ const UNSUPPORTED: Record<string, string[]> = {
 };
 
 function isObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null;
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
 export function validateSchema(schema: unknown): Issue[] {
@@ -41,101 +34,94 @@ export function validateSchema(schema: unknown): Issue[] {
     return [{ title: 'Schema inválido', detail: 'O schema deve ser um objeto JSON.' }];
   }
 
-  const root = schema as JSONSchema;
-
-  if (root.anyOf) {
+  if ('anyOf' in schema) {
     issues.push({ title: 'Root anyOf não suportado', detail: 'O objeto raiz não pode ser do tipo anyOf.' });
   }
 
   let totalProps = 0;
   const seen = new WeakSet<object>();
 
-  function walk(nodeRaw: JSONSchema, depth: number, path: string) {
-    const node = nodeRaw as JSONSchema;
+  function walk(node: unknown, depth: number, path: string) {
+    if (!isObject(node)) return;
 
-    if (isObject(node)) {
-      if (seen.has(node as object)) return;
-      seen.add(node as object);
-    }
+    if (seen.has(node)) return;
+    seen.add(node);
+
     if (depth > 5) {
       issues.push({ title: 'Profundidade excedida', detail: `Profundidade máxima é 5 (em ${path}).` });
       return;
     }
-    if (!isObject(node)) return;
 
-    if (node.$ref) return;
+    // $ref allowed; assume resolved elsewhere (avoid cycles)
+    if ('$ref' in node) return;
 
     const t = node.type;
-
     if (typeof t === 'string') {
-      if (!SUPPORTED_TYPES.has(t as Exclude<JSONSchemaType, 'null'>)) {
-        if (t !== 'null') {
-          issues.push({ title: 'Tipo não suportado', detail: `Tipo "${t}" em ${path} não é suportado.` });
-        }
+      if (!SUPPORTED_TYPES.has(t) && t !== 'null') {
+        issues.push({ title: 'Tipo não suportado', detail: `Tipo "${t}" em ${path} não é suportado.` });
       }
     } else if (Array.isArray(t)) {
       for (const tt of t) {
         if (typeof tt !== 'string') {
           issues.push({ title: 'Tipo inválido', detail: `Tipo não textual em ${path}.` });
-        } else if (!(SUPPORTED_TYPES.has(tt as Exclude<JSONSchemaType, 'null'>) || tt === 'null')) {
+        } else if (!SUPPORTED_TYPES.has(tt) && tt !== 'null') {
           issues.push({ title: 'Tipo não suportado', detail: `Tipo "${tt}" em ${path} não é suportado.` });
         }
       }
     }
 
+    // nested anyOf is allowed
     if (Array.isArray(node.anyOf)) {
       node.anyOf.forEach((branch, i) => walk(branch, depth + 1, `${path}.anyOf[${i}]`));
     }
 
-    if (node.$defs && isObject(node.$defs)) {
+    if (isObject(node.$defs)) {
       for (const [name, def] of Object.entries(node.$defs)) {
-        walk(def as JSONSchema, depth + 1, `${path}.$defs.${name}`);
+        walk(def, depth + 1, `${path}.$defs.${name}`);
       }
     }
 
-    if (t === 'string') {
+    // type-specific unsupported keywords
+    if (node.type === 'string') {
       for (const k of UNSUPPORTED.string) if (k in node) issues.push({ title: 'Keyword não suportada', detail: `${k} não é suportado em ${path}.` });
     }
-    if (t === 'number' || t === 'integer') {
+    if (node.type === 'number' || node.type === 'integer') {
       for (const k of UNSUPPORTED.number) if (k in node) issues.push({ title: 'Keyword não suportada', detail: `${k} não é suportado em ${path}.` });
     }
 
-    if (t === 'object') {
+    if (node.type === 'object') {
       for (const k of UNSUPPORTED.object) if (k in node) issues.push({ title: 'Keyword não suportada', detail: `${k} não é suportado em ${path}.` });
 
       if (node.additionalProperties !== false) {
         issues.push({ title: 'additionalProperties obrigatório', detail: `Defina "additionalProperties": false em ${path}.` });
       }
 
-      const props = node.properties;
-      if (props && isObject(props)) {
-        const names = Object.keys(props);
-        totalProps += names.length;
+      const props = isObject(node.properties) ? node.properties : {};
+      const names = Object.keys(props);
+      totalProps += names.length;
 
-        const req = Array.isArray(node.required) ? new Set(node.required) : new Set<string>();
-        for (const p of names) {
-          if (!req.has(p)) {
-            issues.push({ title: 'Campo obrigatório ausente', detail: `O campo "${p}" em ${path} deve constar em "required".` });
-          }
+      const req = Array.isArray(node.required) ? new Set(node.required as string[]) : new Set<string>();
+      for (const p of names) {
+        if (!req.has(p)) {
+          issues.push({ title: 'Campo obrigatório ausente', detail: `O campo "${p}" em ${path} deve constar em "required".` });
         }
-        for (const p of names) {
-          const child = (props as Record<string, JSONSchema>)[p];
-          walk(child, depth + 1, `${path}.${p}`);
-        }
+      }
+      for (const p of names) {
+        walk(props[p], depth + 1, `${path}.${p}`);
       }
     }
 
-    if (t === 'array') {
+    if (node.type === 'array') {
       for (const k of UNSUPPORTED.array) if (k in node) issues.push({ title: 'Keyword não suportada', detail: `${k} não é suportado em ${path}.` });
       if (!('items' in node)) {
         issues.push({ title: 'Array sem "items"', detail: `Arrays devem definir "items" (${path}).` });
-      } else if (node.items) {
-        walk(node.items, depth + 1, `${path}[]`);
+      } else {
+        walk((node as Record<string, unknown>).items, depth + 1, `${path}[]`);
       }
     }
   }
 
-  walk(root, 1, '$');
+  walk(schema, 1, '$');
 
   if (totalProps > 100) {
     issues.push({ title: 'Número de propriedades excedido', detail: `Até 100 propriedades no total são suportadas (encontradas ${totalProps}).` });
